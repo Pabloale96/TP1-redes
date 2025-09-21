@@ -4,11 +4,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='upload.py',
                                      description="File Transfer",
                                      epilog='TP N#1: File Transfer ')
- 
     group = parser.add_mutually_exclusive_group()
     group.add_argument('-v', '--verbose',
                        action='store_true',
-                       elp="increase output verbosity")
+                       help="increase output verbosity")
     group.add_argument('-q', '--quiet',
                        action='store_true',
                        help="decrease output verbosity")

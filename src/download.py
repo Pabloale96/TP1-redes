@@ -3,8 +3,7 @@ import argparse
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='upload.py',
                                      description="File Transfer",
-                                     epilog='TP N#1: File Transfer ')
- 
+                                     epilog='TP N#1: File Transfer ') 
     group = parser.add_mutually_exclusive_group()
     group.add_argument('-v', '--verbose',
                        action='store_true',
