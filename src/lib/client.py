@@ -7,3 +7,9 @@ class client:
 
     def close(self):
         self.socket.close()
+
+    def upload(self, filepath, filename):
+        print("Uploaded")
+
+    def download(self, filepath, filename):
+        print("Downloaded")

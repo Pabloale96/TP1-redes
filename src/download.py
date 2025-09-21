@@ -39,5 +39,5 @@ if __name__ == '__main__':
         print(args.protocol)
 
 client = client(args.addr, args.port)
-#enviar download
+client.download(args.filepath, args.filename)
 client.close()
