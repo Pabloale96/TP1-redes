@@ -1,4 +1,5 @@
 import argparse
+from lib.client import client
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='upload.py',
@@ -36,3 +37,6 @@ if __name__ == '__main__':
         print(args.filepath)
         print(args.filename)
         print(args.protocol)
+client = client()
+#enviar upload
+#cerrar cliente
