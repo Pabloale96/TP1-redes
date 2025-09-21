@@ -38,6 +38,6 @@ if __name__ == '__main__':
         print(args.filename)
         print(args.protocol)
 
-client = client()
+client = client(args.addr, args.port)
 #enviar download
-#cerrar cliente
+client.close()

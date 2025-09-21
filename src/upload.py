@@ -37,6 +37,7 @@ if __name__ == '__main__':
         print(args.filepath)
         print(args.filename)
         print(args.protocol)
-client = client()
+
+client = client(args.addr, args.port)
 #enviar upload
 #cerrar cliente
