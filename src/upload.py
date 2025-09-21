@@ -40,4 +40,4 @@ if __name__ == '__main__':
 
 client = client(args.addr, args.port)
 #enviar upload
-#cerrar cliente
+client.close()
