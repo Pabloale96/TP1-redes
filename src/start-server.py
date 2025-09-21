@@ -1,4 +1,5 @@
 import argparse
+from lib.server import server
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='start-server.py',
@@ -29,3 +30,6 @@ if __name__ == '__main__':
         print(args.addr)
         print(args.port)
         print(args.dirpath)
+
+server = server(args.addr, args.port)
+server.start()
