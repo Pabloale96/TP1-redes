@@ -14,7 +14,7 @@ if __name__ == '__main__':
                        help="decrease output verbosity")
     parser.add_argument('-H', '--addr',
                         type=str,
-                        default="127.0.0.1", 
+                        default="127.0.0.1",
                         help="server IP address")
     parser.add_argument('-p', '--port',
                         type=int, default=65432,

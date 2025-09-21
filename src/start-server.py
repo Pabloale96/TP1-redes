@@ -18,7 +18,7 @@ if __name__ == '__main__':
                         help="service IP address")
     parser.add_argument('-p', '--port',
                         type=int, 
-                        default=65432, 
+                        default=65432,
                         help="service port")
     parser.add_argument('-s', '--dirpath',
                         type=str,
