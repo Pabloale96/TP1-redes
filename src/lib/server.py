@@ -10,7 +10,7 @@ class server:
         self.port = port
 
     def start(self):
-        self.socket.bind(self.addr, self.port)
+        self.socket.bind((self.addr, self.port))
         while True:
             data, addr = self.socket.recvfrom(SIZE)
             print(f"Recibido de {addr}: {data.decode()}")
