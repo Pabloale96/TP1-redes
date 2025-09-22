@@ -65,3 +65,13 @@ class FileManager:
         self.file.write(data)
         self.file.flush()
 
+    def delete(self):
+        """Cierra y elimina el archivo asociado."""
+        self.close()
+        try:
+            os.remove(self.path)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"El archivo '{self.path}' no existe.")
+        except PermissionError:
+            raise PermissionError(f"No hay permisos para eliminar el archivo '{self.path}'.")
+
