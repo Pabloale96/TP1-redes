@@ -84,3 +84,16 @@ class FileManager:
         """Se asegura de cerrar el archivo al destruir el objeto."""
         self.close()
 
+    def __enter__(self):
+        """
+        Permite usar FileManager en un bloque 'with'.
+
+        :return: La instancia actual de FileManager.
+        """
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        Cierra el archivo automáticamente al salir del bloque 'with'.
+        """
+        self.close()
