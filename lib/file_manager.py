@@ -65,6 +65,14 @@ class FileManager:
         self.file.write(data)
         self.file.flush()
 
+    def get_file_size(self):
+        """
+        Devuelve el tamaño total del archivo en bytes.
+
+        :return: Tamaño del archivo en bytes (int).
+        """
+        return self.file_size
+
     def delete(self):
         """Cierra y elimina el archivo asociado."""
         self.close()
