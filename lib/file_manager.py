@@ -75,3 +75,12 @@ class FileManager:
         except PermissionError:
             raise PermissionError(f"No hay permisos para eliminar el archivo '{self.path}'.")
 
+    def close(self):
+        """Cierra el archivo si está abierto."""
+        if not self.file.closed:
+            self.file.close()
+
+    def __del__(self):
+        """Se asegura de cerrar el archivo al destruir el objeto."""
+        self.close()
+
