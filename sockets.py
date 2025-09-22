@@ -1,36 +1,63 @@
-import sockets
+import socket
 
-class Sockets:
-    def __init__(self, host, port, socket_type = sockets.SOCK_STREAM):
+class Socket:
+    def __init__(self, host, port, socket_type = socket.SOCK_STREAM):
         self.host = host
         self.port = port
+        self.socket_type = socket_type
+        self.socket = None
         try:
-            self.socket = sockets.socket(sockets.AF_INET, socket_type)
+            self.socket = socket.socket(socket.AF_INET, socket_type)
         except Exception as e:
-            throw(e)
-            
-    def bind_socket(self):
+            raise e
+    
+    def bind(self):
         self.socket.bind((self.host, self.port))
 
-    def listen_socket(self, backlog):
+    def listen(self, backlog):
         self.socket.listen(backlog)
 
-    def accept_connection(self):
+    def accept(self):
         conn, addr = self.socket.accept()
-        return conn, addr
+        # Crea una nueva instancia de Sockets para la conexión del cliente
+        host, port = addr
+        client_socket = Sockets(host, port, conn.type)
+        client_socket.socket = conn
+        return client_socket
 
-    def connect_socket(self):
+    def connect(self):
         self.socket.connect((self.host, self.port))
 
-    def send_message(self, conn, message):
-        conn.sendall(message.encode())
+    def send(self, message):
+        if not self.socket:
+            raise ConnectionError("Socket no está inicializado o está cerrado.")
+        self.socket.sendall(message.encode())
 
-    def receive_message(self, conn, buffer_size):
-        message = conn.recv(buffer_size).decode()
+    def recv(self, buffer_size):
+        if not self.socket:
+            raise ConnectionError("Socket no está inicializado o está cerrado.")
+        message = self.socket.recv(buffer_size).decode()
         return message
 
-    def close_socket(self):
-        self.socket.close()
+    def sendto(self, message, address):
+        if not self.socket:
+            raise ConnectionError("Socket no está inicializado o está cerrado.")
+        self.socket.sendto(message.encode(), address)
 
+    def recvfrom(self, buffer_size):
+        if not self.socket:
+            raise ConnectionError("Socket no está inicializado o está cerrado.")
+        return self.socket.recvfrom(buffer_size)
 
-if __name__ == "__main__":
+    def close(self):
+        if self.socket:
+            try:
+                # Avisa al otro extremo que no se enviarán más datos
+                self.socket.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                # El socket podría no estar conectado, lo cual es normal
+                pass
+            self.socket.close()
+
+    def __del__(self):
+        self.close()
