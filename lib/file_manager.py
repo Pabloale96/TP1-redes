@@ -45,3 +45,23 @@ class FileManager:
             self.file.seek(offset)
         return self.file.read(self.chunk_size)
 
+    def write_chunk(self, data, offset):
+        """
+        Escribe un bloque de bytes en el archivo.
+
+        :param data: Bytes a escribir.
+        :param offset: Posición en bytes el archivo donde escribir.
+                       Si es None, escribe en la posición actual del puntero.
+        :raises ValueError: Si el archivo fue abierto en modo lectura.
+
+        Nota: el puntero del archivo queda desplazado al final de los datos escritos.
+        Esto afecta la siguiente operación de escritura sin offset.
+        """
+        if self.file.writable() is False:
+            raise ValueError(f"El archivo '{self.path}' no fue abierto en modo escritura.")
+
+        if offset is not None:
+            self.file.seek(offset)
+        self.file.write(data)
+        self.file.flush()
+
