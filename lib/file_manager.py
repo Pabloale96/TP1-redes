@@ -26,3 +26,22 @@ class FileManager:
         self.file.seek(0, 2)
         self.file_size = self.file.tell()
         self.file.seek(0)
+
+    def read_chunk(self, offset = None) -> bytes:
+        """
+        Lee un bloque del archivo.
+
+        :param offset: Posición en bytes en el archivo desde donde leer. Si es None, lee desde la posición actual.
+        :return: Bytes leídos. Puede ser menor al tamaño solicitado si se alcanza EOF.
+                 Devuelve b'' si ya no hay más datos que leer.
+
+        Nota: el puntero del archivo queda desplazado al final de los datos leídos.
+        """
+        if offset is not None:
+            if offset < 0:
+                raise ValueError("El offset no puede ser negativo")
+            if offset > self.file_size:
+                raise ValueError(f"El offset {offset} está fuera del rango del archivo ({self.file_size} bytes).")
+            self.file.seek(offset)
+        return self.file.read(self.chunk_size)
+
