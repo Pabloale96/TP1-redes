@@ -45,7 +45,7 @@ class FileManager:
             self.file.seek(offset)
         return self.file.read(self.chunk_size)
 
-    def write_chunk(self, data, offset):
+    def write_chunk(self, data, offset=None):
         """
         Escribe un bloque de bytes en el archivo.
 
