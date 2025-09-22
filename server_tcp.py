@@ -28,6 +28,7 @@ server.bind()
 server.listen(5)
 print(f"Servidor TCP escuchando en {HOST}:{PORT}")
 
+# Bucle principal para aceptar conexiones entrantes
 while True:
     # Acepta nuevas conexiones
     client = server.accept()
