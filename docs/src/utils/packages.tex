@@ -1,0 +1,72 @@
+% ---------- Language & fonts ----------
+\usepackage[spanish]{babel}
+
+% ---------- Math & symbols ----------
+\usepackage{amsmath,amssymb,amsfonts,mathtools}
+\usepackage{amsthm}
+
+% ---------- Layout & graphics ----------
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs,longtable,multirow}
+\usepackage{dsfont}
+\usepackage{enumitem,multicol,setspace}
+\usepackage{scalerel,stackengine} % sombrero support (\stackMath below)
+\usepackage{calc}                  % for \widthof
+\usepackage{ragged2e}              % for \justifying
+\usepackage[ruled,vlined]{algorithm2e}
+
+% ---------- Bibliography ----------
+\usepackage{csquotes} % load BEFORE biblatex for best integration
+\usepackage[style=authoryear-comp,backend=bibtex]{biblatex}
+% Path is from src/main.tex to src/utils/references.bib:
+\addbibresource{utils/references.bib}
+
+% ---------- Code listings ----------
+\usepackage{listings}
+\usepackage{xcolor}
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+  backgroundcolor=\color{backcolour},
+  commentstyle=\color{codegreen},
+  keywordstyle=\color{magenta},
+  numberstyle=\tiny\color{codegray},
+  stringstyle=\color{codepurple},
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  captionpos=b,
+  keepspaces=true,
+  numbers=left,
+  numbersep=5pt,
+  showstringspaces=false,
+  tabsize=2
+}
+\lstdefinestyle{pythonstyle}{
+  language=Python,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue}\bfseries,
+  stringstyle=\color{orange},
+  commentstyle=\color{gray}\itshape,
+  showstringspaces=false,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  stepnumber=1,
+  numbersep=10pt,
+  frame=single,
+  rulecolor=\color{black},
+  backgroundcolor=\color{white},
+  breaklines=true,
+  tabsize=4,
+  captionpos=b
+}
+\lstset{style=pythonstyle}
+
+% ---------- FP helpers used by your multicol macro ----------
+\usepackage[nomessages]{fp}
+
+% ---------- stackengine config used by sombrero macro ----------
+\stackMath
