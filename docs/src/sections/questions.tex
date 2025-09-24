@@ -1,0 +1,9 @@
+\section{Respuestas a Preguntas}
+\begin{enumerate} 
+  \item \textbf{Describa la arquitectura Cliente-Servidor}
+  \item \textbf{¿Cuál es la función de un protocolo de capa de aplicación?}\\
+  Establecer las reglas y convenciones que permiten la comunicación entre procesos de aplicación sobre la red: define el formato y la semántica de los mensajes, la temporización, el manejo de errores y los procedimientos de interacción (p.\,ej., solicitud–respuesta), apoyándose en los servicios de la capa de transporte.
+  \item \textbf{Detalle el protocolo de aplicación desarrollado en este trabajo.}
+  \item \textbf{La capa de transporte del stack TCP/IP ofrece dos protocolos: TCP y UDP. ¿Qué servicios proveen dichos protocolos? ¿Cuáles son sus características? ¿Cuándo es apropiado utilizar cada uno?}\\
+  Ambos brindan multiplexación/demultiplexación por puertos y verificación de integridad mediante \emph{checksum}. TCP es orientado a conexión y ofrece entrega fiable y ordenada de un flujo de bytes, control de flujo y de congestión, acuses y retransmisiones; es adecuado cuando se requiere fiabilidad y orden (HTTP/HTTPS, correo, SSH, bases de datos). UDP es no orientado a conexión y transmite datagramas sin garantías de entrega ni de orden, sin control de flujo/congestión, con sobrecarga y latencia bajas; se prefiere cuando prima la inmediatez, el multicast o la aplicación gestiona su propia fiabilidad (DNS, VoIP, \emph{streaming}, juegos en tiempo real).
+\end{enumerate}
