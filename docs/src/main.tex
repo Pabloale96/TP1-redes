@@ -1,0 +1,20 @@
+\PassOptionsToPackage{a4paper,margin=1in}{geometry} 
+\PassOptionsToPackage{hidelinks}{hyperref}           % tweak link style
+
+\documentclass{style} 
+
+\input{utils/packages.tex}
+\input{utils/macros.tex}
+
+\begin{document}
+\maketitle
+
+\justifying
+
+\include{sections/example}
+\include{sections/questions}
+\include{sections/appendix}
+
+% Print bibliography added on utils/references.bib
+\printbibliography
+\end{document}
