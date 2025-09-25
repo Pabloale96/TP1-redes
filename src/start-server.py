@@ -31,5 +31,5 @@ if __name__ == '__main__':
         print(args.port)
         print(args.dirpath)
 
-server = server(args.addr, args.port)
-server.start()
+    server = server(args.addr, args.port)
+    server.upload()
