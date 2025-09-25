@@ -1,11 +1,10 @@
-from sockets import Socket
-import socket
+from lib.sockets import Socket
 
 HOST = '127.0.0.1'  # Standard loopback interface address (localhost)
 PORT = 8080        # Port to listen on (non-privileged ports are > 1023)
 
 # 1. Crear el socket con el tipo SOCK_DGRAM para UDP
-server_socket = Socket(HOST, PORT, socket_type=socket.SOCK_DGRAM)
+server_socket = Socket(HOST, PORT, socket_type=Socket.SOCK_DGRAM)
 server_socket.bind()
 print(f"Servidor UDP escuchando en {HOST}:{PORT}")
 
@@ -23,3 +22,5 @@ except KeyboardInterrupt:
     print("\nCerrando el servidor.")
 finally:
     server_socket.close()
+
+

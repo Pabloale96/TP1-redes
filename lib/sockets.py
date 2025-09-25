@@ -1,6 +1,9 @@
 import socket
 
 class Socket:
+    SOCK_STREAM = socket.SOCK_STREAM
+    SOCK_DGRAM = socket.SOCK_DGRAM
+
     def __init__(self, host, port, socket_type = socket.SOCK_STREAM):
         self.host = host
         self.port = port

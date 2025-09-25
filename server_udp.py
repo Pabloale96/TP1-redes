@@ -1,4 +1,4 @@
-from sockets import Socket
+from lib.sockets import Socket
 import socket
 
 HOST = '127.0.0.1'  # Standard loopback interface address (localhost)
