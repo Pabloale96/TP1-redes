@@ -54,10 +54,15 @@ class client:
           3) Reporta progreso por stdout según flags.
         """
 
+        self.__print_info(string_verbose="Validating filepath...")
         __validate_filepath(self.filepath)
+        self.__print_info(string_verbose="filepath validated")
 
+        self.__print_info(string_verbose="Creating file_manager...")
         file_manager = fm.FileManager(self.filepath, "r")
+        self.__print_info(string_verbose="File_manager has been created")
 
+        self.__print_info(string_verbose="Reading first chunk...")
         chunk = file_manager.read_chunk()
 
         read_bytes_count = len(chunk)
@@ -66,6 +71,8 @@ class client:
 
         while chunk:
             self.conn.send(chunk)
+            self.__print_info(string_normal=f"Percentage uploaded: {percentage}%")
+            self.__print_info(string_verbose=f"Bytes sent: {read_bytes_count}/{file_size}[B]")
 
             chunk = file_manager.read_chunk()
             read_bytes_count += len(chunk)
