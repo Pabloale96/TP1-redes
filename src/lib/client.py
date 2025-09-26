@@ -43,3 +43,20 @@ def __validate_port(port):
         raise ValueError(f"Puerto fuera de rango [1..65535]: {p}")
     return p
 
+
+def __validate_addr(addr):
+    """Valida dirección IP literal (v4/v6). No resuelve hostnames.
+
+    Raises:
+        ValueError: si está vacía/no es str o no es IP literal válida.
+    """
+    if not addr or not isinstance(addr, str):
+        raise ValueError("Dirección vacía o no es texto.")
+    try:
+        ipaddress.ip_address(addr)
+        return addr
+    except ValueError:
+        pass
+    # No se intenta DNS aquí; se considera inválido si no es IP literal
+    raise ValueError(f"Dirección no es IP literal válida: {addr!r}")
+
