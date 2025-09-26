@@ -1,18 +1,25 @@
 import socket
+        """Descarga desde el servidor y escribe en `self.filepath` por chunks.
 
+        Flujo:
+          1) Abre FileManager en modo escritura (crea/omite si ya existe).
+          2) Recibe chunks de `self.conn.rcv`.
+          3) Escribe en disco y reporta progreso.
+        """
+        file_manager = fm.FileManager(self.filepath, "w")
 
 class client:
-    def __init__(self, addr, port):
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.addr = addr
-        self.port = port
+        chunk = self.conn.rcv()
+        written_bytes_count = len(chunk)
 
-    def close(self):
-        self.socket.close()
+        while chunk:
+            file_manager.write_chunk(chunk)
+            chunk = self.conn.rcv()
+            written_bytes_count += len(chunk)
 
     def upload(self, filepath, filename):
         print("Uploaded")
-        self.socket.sendto("test".encode(), (self.addr, self.port))
+        )
 
     def download(self, filepath, filename):
         print("Downloaded")
