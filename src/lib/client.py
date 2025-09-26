@@ -42,7 +42,8 @@ class client:
         self.conn = protocol.Protocol(addr, port, filename, verbose, quiet)
 
     def close(self):
-        self.socket.close()
+        """Cierra la conexión del protocolo."""
+        self.conn.close()
 
     def upload(self, filepath, filename):
         print("Uploaded")
