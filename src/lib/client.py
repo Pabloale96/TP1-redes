@@ -1,4 +1,4 @@
-import socket
+    def download(self):
         """Descarga desde el servidor y escribe en `self.filepath` por chunks.
 
         Flujo:
