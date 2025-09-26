@@ -25,5 +25,9 @@ import socket
             string_normal=f"{written_bytes_count}[B] have been written to {self.filepath}"
         )
 
-    def download(self, filepath, filename):
-        print("Downloaded")
+    def __print_info(self, string_normal=None, string_verbose=None):
+        """Imprime mensajes según flags `verbose`/`quiet`."""
+        if self.verbose:
+            print(string_verbose)
+        elif not self.quiet:
+            print(string_normal)
