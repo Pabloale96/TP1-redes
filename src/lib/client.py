@@ -67,3 +67,9 @@ def __is_boolean(boolean):
         return False
     return True
 
+def __is_string(filepath):
+    """Verifica tipo string"""
+    if not isinstance(filepath, str):
+        return False
+    return True
+
