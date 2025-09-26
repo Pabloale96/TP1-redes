@@ -78,3 +78,12 @@ def __validate_filepath(filepath):
     if not os.path.exists(filepath):
         raise ValueError("File does not exist")
 
+def __validate_filename(filename):
+    """Exige nombre de archivo no vacío."""
+    if not filename:
+        raise ValueError("Empty Filename")
+    if __is_string(filename):
+        return filename
+    else:
+        raise ValueError("filename must be a string")
+
