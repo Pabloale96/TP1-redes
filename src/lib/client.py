@@ -60,3 +60,10 @@ def __validate_addr(addr):
     # No se intenta DNS aquí; se considera inválido si no es IP literal
     raise ValueError(f"Dirección no es IP literal válida: {addr!r}")
 
+
+def __is_boolean(boolean):
+    """Verifica tipo bool estricto para flags."""
+    if not isinstance(boolean, bool):
+        return False
+    return True
+
