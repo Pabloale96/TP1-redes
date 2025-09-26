@@ -31,3 +31,15 @@ import socket
             print(string_verbose)
         elif not self.quiet:
             print(string_normal)
+
+
+def __validate_port(port):
+    """Valida y normaliza el puerto (1..65535)."""
+    try:
+        p = int(port)
+    except (TypeError, ValueError):
+        raise ValueError(f"Puerto inválido (no numérico): {port!r}")
+    if not (1 <= p <= 65535):
+        raise ValueError(f"Puerto fuera de rango [1..65535]: {p}")
+    return p
+
