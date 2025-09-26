@@ -73,3 +73,8 @@ def __is_string(filepath):
         return False
     return True
 
+def __validate_filepath(filepath):
+    """Exige que la ruta exista (para lectura en upload)."""
+    if not os.path.exists(filepath):
+        raise ValueError("File does not exist")
+
