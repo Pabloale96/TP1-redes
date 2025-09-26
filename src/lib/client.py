@@ -6,19 +6,23 @@ import socket
           2) Recibe chunks de `self.conn.rcv`.
           3) Escribe en disco y reporta progreso.
         """
+        self.__print_info(string_verbose="Creating file_manager...")
         file_manager = fm.FileManager(self.filepath, "w")
+        self.__print_info(string_verbose="File_manager has been created")
+        self.__print_info(string_verbose=f"File {self.filepath} has been created")
 
-class client:
+        self.__print_info(string_verbose="Receiving first chunk...")
         chunk = self.conn.rcv()
         written_bytes_count = len(chunk)
 
         while chunk:
             file_manager.write_chunk(chunk)
+            self.__print_info(string_verbose=f"Bytes written: {written_bytes_count}[B]")
             chunk = self.conn.rcv()
             written_bytes_count += len(chunk)
 
-    def upload(self, filepath, filename):
-        print("Uploaded")
+        self.__print_info(
+            string_normal=f"{written_bytes_count}[B] have been written to {self.filepath}"
         )
 
     def download(self, filepath, filename):
