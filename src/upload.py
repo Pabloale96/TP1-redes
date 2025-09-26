@@ -40,4 +40,5 @@ if __name__ == '__main__':
 
 client = client(args.addr, args.port)
 client.upload(args.filepath, args.filename)
+print("File has been uploaded succesfully")
 client.close()
