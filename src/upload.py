@@ -38,6 +38,7 @@ if __name__ == '__main__':
         print(args.filename)
         print(args.protocol)
 
-client = client(args.addr, args.port)
-client.upload(args.filepath, args.filename)
+client = client(args.addr, args.port, args.filepath, args.filename, args.verbose, args.quiet)
+client.upload()
+print("File has been uploaded succesfully")
 client.close()
