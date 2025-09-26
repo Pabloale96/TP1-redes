@@ -87,3 +87,14 @@ def __validate_filename(filename):
     else:
         raise ValueError("filename must be a string")
 
+def __validate_verbose_and_quiet(verbose, quiet):
+    """Valida flags de salida (mutuamente excluyentes)."""
+    if not __is_boolean(verbose):
+        raise TypeError("verbose must be a boolean")
+
+    if not __is_boolean(quiet):
+        raise TypeError("quiet must be a boolean")
+
+    if verbose and quiet:
+        raise ValueError("You can't have both verbose and quiet")
+    return verbose, quiet
