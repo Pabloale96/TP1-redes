@@ -45,9 +45,31 @@ class client:
         """Cierra la conexión del protocolo."""
         self.conn.close()
 
-    def upload(self, filepath, filename):
-        print("Uploaded")
-        self.socket.sendto("test".encode(), (self.addr, self.port))
+    def upload(self):
+        """Sube el archivo local en chunks al servidor vía `self.conn.send`.
+
+        Flujo:
+          1) Abre FileManager en modo lectura.
+          2) Lee y envía chunks sucesivos.
+          3) Reporta progreso por stdout según flags.
+        """
+
+        __validate_filepath(self.filepath)
+
+        file_manager = fm.FileManager(self.filepath, "r")
+
+        chunk = file_manager.read_chunk()
+
+        read_bytes_count = len(chunk)
+        file_size = file_manager.get_file_size()
+        percentage = read_bytes_count / file_size * 100
+
+        while chunk:
+            self.conn.send(chunk)
+
+            chunk = file_manager.read_chunk()
+            read_bytes_count += len(chunk)
+            percentage = read_bytes_count / file_size * 100
 
     def download(self, filepath, filename):
         print("Downloaded")
