@@ -30,7 +30,7 @@ class client:
         if protocol == SELECTIVE_REPEAT:
             self.protocolo.selectiverepeat()
         self.protocolo.fin()
-        self.socket.close()            
+        self.protocolo.close()            
         
     def download(self, filepath, filename, protocol):
         self.filepath = filepath
@@ -43,4 +43,4 @@ class client:
         if protocol == SELECTIVE_REPEAT:
             self.protocolo.selectiverepeat()
         self.protocolo.fin()
-        self.socket.close()
+        self.protocolo.close()

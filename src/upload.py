@@ -50,4 +50,3 @@ client = client(args.addr, args.port)
 client.upload(args.filepath,
               args.filename,
               string_to_number_map.get(args.protocol))
-client.close()
