@@ -1,50 +1,78 @@
 import socket
 import struct
-from enum import IntEnum
 
+TIMEOUT = 0.01
 
-BUFFER_SIZE = 1024  # tamaño recomendado para evitar fragmentacion 
-TIMEOUT = 1
-SIZE_HEADER = 7
+# modos
+UPLOAD = 1
+DOWNLOAD = 2
 
+# tipo de transmicion
+STOP_AND_WAIT = 1
+SELECTIVE_REPEAT = 2
 
-class Flags(IntEnum):
-    DATA = 0
-    ACK = 1
-    FIN = 2
+# FLAGS
+DATA = 0
+SYN = 1
+ACK = 2
+FIN = 3
+
+# Formato del header
+# Mode (1byte = B) | Type (1byte = B) | Seq_number (2bytes = H) | ACK (2bytes = H) | Flags (1byte = B) | Length (2bytes = H)
+FORMAT = '!BBHHBH'
+HEADER_SIZE = struct.calcsize(FORMAT)
+
+PAYLOAD_SIZE = 1024  # tamaño recomendado para evitar fragmentacion
+
+PACKET_SIZE = HEADER_SIZE + PAYLOAD_SIZE  # = 1024 + 9 bytes
 
 
 class server:
 
-    def __init__(self, addr, port):
+    def __init__(self, addr, port, dirpath):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.addr = addr
         self.port = port
+        self.dirpath = dirpath
 
     def start(self):
         self.socket.bind((self.addr, self.port))
-        with open("recibido.bin", "wb") as f:
-            expected_seq = 0
-            print("server listo")
+        received_data = []
+        expected_seq = 0
+        print("server listo")
 
-            while True:
-                data, addr = self.socket.recvfrom(SIZE_HEADER + BUFFER_SIZE)  # size del header + size del bufer = total size
-                tipo, seq, length = struct.unpack("!B I H", data[:SIZE_HEADER])  # unpack del 0 al 7
-                payload = data[SIZE_HEADER:SIZE_HEADER+length]  # unpack del 8 al final del chunk
-                if tipo == 0:  # data
+        while True:
+            data, addr = self.socket.recvfrom(PACKET_SIZE)  # size del header + size del bufer = total size
+            modo, tipo, seq, _, flags, length = struct.unpack(FORMAT, data[:HEADER_SIZE])  # unpack del header
+            payload = data[HEADER_SIZE:HEADER_SIZE+length]  # unpack datos del chunk
+            if modo == UPLOAD:
+                if flags == SYN:
+                    ack = struct.pack(FORMAT, UPLOAD, STOP_AND_WAIT, seq, 0, SYN, 0)
+                    self.socket.sendto(ack, addr)  # ack del SYN
+                    filename = payload.decode()
+                if flags == DATA:  # data
                     if seq == expected_seq:
-                        f.write(payload)
-                        print(f"recibido paquete {seq},{length} bytes")
-                        ack = struct.pack("!B I H", Flags.ACK, seq, 0)
+                        received_data.append(payload)
+                        print(f"recibido paquete {seq},{length} bytes from:{addr}")
+                        ack = struct.pack(FORMAT, UPLOAD, STOP_AND_WAIT, seq, 0, ACK, 0)
                         self.socket.sendto(ack, addr)  # mando ack del segmento recibido
                         expected_seq += 1
                     else:
                         print(f"duplicado {seq}, reenvio ack")
-                        ack = struct.pack("!B I H", Flags.ACK, expected_seq - 1, 0)
+                        ack = struct.pack(FORMAT, UPLOAD, STOP_AND_WAIT, expected_seq - 1, 0, ACK, 0)
                         self.socket.sendto(ack, addr)  # vuelvo a mandar ack (reenviaron algo que ya recibi)
-                elif tipo == 2:  # FIN
-                    print("transferencia terminada")
-                    ack = struct.pack("!B I H", Flags.ACK, seq, 0)
+                elif flags == FIN:  # FIN
+                    print(f"transferencia terminada del archivo:{filename}")
+                    ack = struct.pack(FORMAT, UPLOAD, STOP_AND_WAIT, seq, 0, ACK, 0)
                     self.socket.sendto(ack, addr)  # ack del FIN
+                    file = b''.join(received_data)
+                    with open(self.dirpath + filename, 'wb') as f:
+                        f.write(file)
                     break
+            if modo == DOWNLOAD:
+                if flags == SYN:
+                    ack = struct.pack(FORMAT, UPLOAD, STOP_AND_WAIT, seq, 0, SYN, 0)
+                    self.socket.sendto(ack, addr)  # ack del SYN
+                    filename = payload.decode()
+
         self.socket.close()

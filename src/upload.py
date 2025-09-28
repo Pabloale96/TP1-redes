@@ -1,6 +1,13 @@
 import argparse
 from lib.client import client
 
+string_to_number_map = {
+    "SW": 1,
+    "SR": 2
+}
+
+list_of_choices = ["SW", "SR"]
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='upload.py',
                                      description="File Transfer",
@@ -24,10 +31,11 @@ if __name__ == '__main__':
                         help="src source file path")
     parser.add_argument('-n', '--filename',
                         type=str,
-                        default="",
+                        default="archivo.bin",
                         help="file name")
     parser.add_argument('-r', '--protocol',
-                        type=str, default="",
+                        type=str, default="SW",
+                        choices=list_of_choices,
                         help="Stop & Wait or Selective Repeat[SW or SR]")
     args = parser.parse_args()
 
@@ -39,5 +47,7 @@ if __name__ == '__main__':
         print(args.protocol)
 
 client = client(args.addr, args.port)
-client.upload(args.filepath, args.filename)
+client.upload(args.filepath,
+              args.filename,
+              string_to_number_map.get(args.protocol))
 client.close()

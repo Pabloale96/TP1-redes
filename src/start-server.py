@@ -22,7 +22,7 @@ if __name__ == '__main__':
                         help="service port")
     parser.add_argument('-s', '--dirpath',
                         type=str,
-                        default="",
+                        default="received/",
                         help="storage dir path")
     args = parser.parse_args()
 
@@ -31,5 +31,5 @@ if __name__ == '__main__':
         print(args.port)
         print(args.dirpath)
 
-server = server(args.addr, args.port)
+server = server(args.addr, args.port, args.dirpath)
 server.start()
