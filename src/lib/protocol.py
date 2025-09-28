@@ -215,6 +215,9 @@ class Protocol:
     def get_mode(self):
         return self.mode
     
+    def close(self):
+        self.socket.close()
+    
     def send_syn(self):
         syn_pkt = struct.pack(FORMAT, self.mode, self.transmission_type, 0, 0, SYN, len(self.file_name)) + self.file_name.encode()  # mando SYN
         while True:
@@ -320,3 +323,5 @@ class Protocol:
         self.running = False   
         if self.ack_thread.is_alive():
             self.ack_thread.join() 
+
+
