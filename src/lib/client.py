@@ -26,9 +26,9 @@ class client:
         self.protocolo.send_syn()
 
         if protocol == STOP_AND_WAIT:
-            self.protocolo.stopandwait()
+            self.protocolo.send_stopandwait()
         if protocol == SELECTIVE_REPEAT:
-            self.protocolo.selectiverepeat()
+            self.protocolo.send_selectiverepeat()
         self.protocolo.fin()
         self.protocolo.close()            
         
@@ -39,8 +39,8 @@ class client:
     
         self.protocolo.send_syn()
         if protocol == STOP_AND_WAIT:
-            self.protocolo.stopandwait()
+            self.protocolo.receive_stopandwait()
         if protocol == SELECTIVE_REPEAT:
-            self.protocolo.selectiverepeat()
+            self.protocolo.receive_selectiverepeat()
         self.protocolo.fin()
         self.protocolo.close()

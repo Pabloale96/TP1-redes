@@ -231,7 +231,7 @@ class Protocol:
             except socket.timeout:
                 print("reenviando SYN")
 
-    def stopandwait(self):
+    def send_stopandwait(self):
         with open(self.file_name, "rb") as f:
             while True:
                 chunk = f.read(PAYLOAD_SIZE)
@@ -286,7 +286,7 @@ class Protocol:
             except socket.timeout:
                 continue
 
-    def selectiverepeat(self):
+    def send_selectiverepeat(self):
         # Dividir archivo en chunks
         with open(self.file_name, "rb") as f:
             chunks = []
@@ -324,4 +324,8 @@ class Protocol:
         if self.ack_thread.is_alive():
             self.ack_thread.join() 
 
+    def receive_selectiverepeat(self):
+        print("receiving")
 
+    def receive_selectiverepeat(self):
+        print("receiving")
