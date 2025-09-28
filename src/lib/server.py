@@ -47,23 +47,23 @@ class server:
             payload = data[HEADER_SIZE:HEADER_SIZE+length]  # unpack datos del chunk
             if modo == UPLOAD:
                 if flags == SYN:
-                    ack = struct.pack(FORMAT, UPLOAD, STOP_AND_WAIT, seq, 0, SYN, 0)
+                    ack = struct.pack(FORMAT, modo, tipo, seq, 0, SYN, 0)
                     self.socket.sendto(ack, addr)  # ack del SYN
                     filename = payload.decode()
                 if flags == DATA:  # data
                     if seq == expected_seq:
                         received_data.append(payload)
                         print(f"recibido paquete {seq},{length} bytes from:{addr}")
-                        ack = struct.pack(FORMAT, UPLOAD, STOP_AND_WAIT, seq, 0, ACK, 0)
+                        ack = struct.pack(FORMAT, modo, tipo, seq, 0, ACK, 0)
                         self.socket.sendto(ack, addr)  # mando ack del segmento recibido
                         expected_seq += 1
                     else:
                         print(f"duplicado {seq}, reenvio ack")
-                        ack = struct.pack(FORMAT, UPLOAD, STOP_AND_WAIT, expected_seq - 1, 0, ACK, 0)
+                        ack = struct.pack(FORMAT, modo, tipo, expected_seq - 1, 0, ACK, 0)
                         self.socket.sendto(ack, addr)  # vuelvo a mandar ack (reenviaron algo que ya recibi)
                 elif flags == FIN:  # FIN
                     print(f"transferencia terminada del archivo:{filename}")
-                    ack = struct.pack(FORMAT, UPLOAD, STOP_AND_WAIT, seq, 0, ACK, 0)
+                    ack = struct.pack(FORMAT, modo, tipo, seq, 0, ACK, 0)
                     self.socket.sendto(ack, addr)  # ack del FIN
                     file = b''.join(received_data)
                     with open(self.dirpath + filename, 'wb') as f:
@@ -71,7 +71,7 @@ class server:
                     break
             if modo == DOWNLOAD:
                 if flags == SYN:
-                    ack = struct.pack(FORMAT, UPLOAD, STOP_AND_WAIT, seq, 0, SYN, 0)
+                    ack = struct.pack(FORMAT, modo, tipo, seq, 0, SYN, 0)
                     self.socket.sendto(ack, addr)  # ack del SYN
                     filename = payload.decode()
 
