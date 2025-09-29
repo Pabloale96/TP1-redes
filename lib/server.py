@@ -1,78 +1,69 @@
-from .sockets import Socket 
+from .protocolo import Protocol
 from .file_manager import FileManager
 import threading
+import os
 
-# Corregido: El type hint debe ser solo `Socket`
-def handle_client(client_socket: Socket):
-        print(f"Conexión aceptada desde {client_socket.host}:{client_socket.port}")
-        try:
-            while True:
-                # Recibe datos del cliente
-                data = client_socket.recv(1024)
-                if not data:
-                    print(f"Cliente {client_socket.host}:{client_socket.port} desconectado.")
-                    break  # El cliente cerró la conexión
+def handle_client_upload(client_protocol: Protocol, storage_dir: str):
+    """
+    Maneja la subida de un archivo desde un cliente en un hilo dedicado.
+    """
+    try:
+        # El nombre del archivo ya fue recibido por client_protocol.accept()
+        filename = client_protocol.filename
+        print(f"[Hilo {threading.get_ident()}] Conexión aceptada de {client_protocol.peer_address}. Recibiendo archivo: {filename}")
 
-                print(f"Recibido de {client_socket.host}:{client_socket.port}: {data}")
-                # Devuelve los mismos datos al cliente (eco)
-                client_socket.send(data)
-        except Exception as e:
-            print(f"Error con el cliente {client_socket.host}:{client_socket.port}: {e}")
-        finally:
-           client_socket.close()
+        filepath = os.path.join(storage_dir, filename)
+        file_manager = FileManager(filepath, "w")
+
+        while True:
+            # Recibe un chunk de datos del archivo
+            chunk = client_protocol.recv(4096) # Usar un buffer más grande
+            if not chunk:
+                print(f"[Hilo {threading.get_ident()}] Fin de la transferencia para {filename}.")
+                break  # El cliente terminó de enviar o cerró la conexión
+
+            file_manager.write_chunk(chunk)
+            print(f"[Hilo {threading.get_ident()}] Recibidos {len(chunk)} bytes para {filename}")
+
+    except Exception as e:
+        print(f"[Hilo {threading.get_ident()}] Error con el cliente {client_protocol.peer_address}: {e}")
+    finally:
+        if 'file_manager' in locals():
+            file_manager.close()
+        client_protocol.close()
+        print(f"[Hilo {threading.get_ident()}] Conexión con {client_protocol.peer_address} cerrada.")
 
 class Server:
-    def __init__(self, host, port):
+    def __init__(self, host, port, storage_dir="."):
         self.host = host
         self.port = port
-        # Corregido: Se usa la clase directamente y se cambia a TCP (SOCK_STREAM)
-        self.socket = Socket(host, port, socket_type=Socket.SOCK_STREAM)
+        self.storage_dir = storage_dir
+        # El socket principal del servidor que escucha por nuevas conexiones.
+        self.main_protocol = Protocol(self.host, self.port)
         self.threads = []
-        self.clients = []
-        self.file = FileManager("prueba.txt","r")
-        self.file_copy = FileManager("prueba_copy.txt","w")
-
-
-    def __del__(self):
-        self.close()
-
-    def accept(self):
-        client_socket, addr = self.socket.accept()
-        self.clients.append(client_socket)
-
-    def close(self):
-        self.socket.close()
-        for thread in self.threads:
-            thread.join()
-        for client in self.clients:
-            client.join()
-
-    def bind(self):
-        self.socket.bind()
-
-    def listen(self, number):
-        self.socket.listen(number)
-
-
-    def upload(self):
-        print("upload...")
-        size = self.file.get_file_size()
-        offset = 0
-        while offset < size:
-            read_bytes = self.file.read_chunk(offset)
-            offset += len(read_bytes)
-
-            self.file_copy.write_chunk(read_bytes)
-
+        if not os.path.exists(self.storage_dir):
+            os.makedirs(self.storage_dir)
+            print(f"Directorio de almacenamiento '{self.storage_dir}' creado.")
 
     def start(self):
-        self.bind()
-        self.listen(5)
-        print(f"Servidor escuchando en {self.host}:{self.port}")
+        """
+        Bucle principal del servidor. Escucha por conexiones entrantes en el socket principal
+        y crea un nuevo hilo con un nuevo socket para cada cliente.
+        """
+        print(f"Servidor principal escuchando en {self.host}:{self.port}")
         while True:
-            # Acepta nuevas conexiones
-            client = self.accept()
-            # Inicia un nuevo hilo para manejar al cliente
-            client_thread = threading.Thread(target=handle_client, args=(client,))
-            client_thread.start()
-            self.threads.append(client_thread)
+            # 1. Usar el socket principal para aceptar una nueva conexión.
+            #    accept() ahora devolverá un nuevo objeto Protocol para el cliente.
+            client_protocol = self.main_protocol.accept()
+            
+            if client_protocol:
+                # 2. Si la conexión fue exitosa, iniciar un hilo para manejar al cliente.
+                #    El nuevo 'client_protocol' ya está "conectado" y tiene su propio socket.
+                client_thread = threading.Thread(target=handle_client_upload, args=(client_protocol, self.storage_dir))
+                client_thread.start()
+                self.threads.append(client_thread)
+
+    def close(self):
+        self.main_protocol.close()
+        for thread in self.threads:
+            thread.join()

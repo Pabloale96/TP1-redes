@@ -37,6 +37,6 @@ if __name__ == '__main__':
 
     try:
         print("escuchando...")
-        server.upload()
+        server.start()
     except KeyboardInterrupt:
         print("\nCerrando el servidor.")
