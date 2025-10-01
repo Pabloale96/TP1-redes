@@ -60,14 +60,7 @@ class Protocol:
         # Sumamos el header size al paquete
         buffer_size = payload_size + HEADER_SIZE
         # Seleccionar el método de recepción según el tipo solicitado.
-        print("\n\n\n\n")
-        print(type)
-        print("\n\n\n\n")
-
         if type == self.STOP_AND_WAIT:
-            print("\n\n\n\n")
-            print("HOLAAAAAAA")
-            print("\n\n\n\n")
             return self._recv_stop_and_wait(buffer_size)
         elif type == self.SELECTIVE_REPEAT:
             return self._recv_selective_repeat(buffer_size)
@@ -107,9 +100,6 @@ class Protocol:
         logger.vprint(f"[CLIENT] Handshake completado.")
 
         # 5. Enviar la operación de forma confiable (incluye el protocolo de recuperación)
-        print("\n\n\n\n")
-        print(self.recovery_mode)
-        print("\n\n\n\n")
         chosen_protocol = self.recovery_mode
         self.recovery_mode = chosen_protocol
         logger.vprint(
@@ -266,7 +256,7 @@ class Protocol:
         # Aumentamos el buffer por si los payloads son relativamente grandes
         self.socket.socket.settimeout(timeout)
         try:
-            packet, address = self.socket.recvfrom(64 * 1024)
+            packet, address = self.socket.recvfrom(1024)
             if len(packet) < HEADER_SIZE:
                 logger.vprint(
                     f"Paquete recibido demasiado corto ({len(packet)} bytes). Ignorando."
@@ -289,95 +279,76 @@ class Protocol:
             return self._send_selective_repeat(data)
         else:
             raise ValueError(f"Tipo de envío desconocido: {type}")
-    def _recv_stop_and_wait(self, buffer_size):
-        if not self.is_connected:
-            return b""
-
-        expected_seq = self.ack_num
-        received_data = bytearray()
-
-        while True:
-            header, data, _ = self._receive_packet(timeout=None)
-            if not header:
-                self.is_connected = False
-                return bytes(received_data)
-
-            seq_num = header[0]
-
-            if header[2] & FLAG_PSH:
-                # Paquete en orden exacto
-                if seq_num == expected_seq:
-                    # Entregamos inmediatamente si coincide con lo esperado
-                    received_data.extend(data)
-                    expected_seq += len(data)
-                    self.ack_num = expected_seq
-                    self._send_packet(FLAG_ACK)
-                    if len(received_data) >= buffer_size:
-                        return bytes(received_data)
-                    continue
-
-                else:
-                    # Paquete fuera de la ventana, reenviar último ACK
-                    logger.vprint(
-                        f"Paquete con SEQ ={seq_num} no esperado. Reenviando último ACK."
-                    )
-                    self._send_packet(FLAG_ACK)
-
-            elif header[2] & FLAG_FIN:
-                logger.vprint("Recibido FIN. La conexión se está cerrando.")
-                self.ack_num = header[0] + 1
-                self._send_packet(FLAG_ACK | FLAG_FIN)
-                self.is_connected = False
-                return bytes(received_data)
-
-            else:
-                logger.vprint(f"Paquete inesperado con SEQ={seq_num} [sin flag PSH]. Ignorando.")
 
     def _send_stop_and_wait(self, flags, data):
         offset = 0
-        if len(data) > PAYLOAD_SIZE:
-            payload = data[offset:offset+PAYLOAD_SIZE]
-        else:
-            payload = data
+        n = len(data)
 
-        attempts = 5  # Número máximo de reintentos
-        while attempts > 0:
-            self._send_packet(flags, payload)
+        while offset < n:
+            payload = data[offset:offset + PAYLOAD_SIZE]
 
-            header, _, _ = self._receive_packet(self.retransmission_timeout)
+            attempts = 5                     # ← reset here, per packet
+            while attempts > 0:
+                self._send_packet(flags, payload)
+                header,_ , _ = self._receive_packet(self.retransmission_timeout)
 
-            # Si se recibe un ACK válido para nuestros datos
-            # El ACK que esperamos debe confirmar el siguiente byte después de los datos enviados.
-            expected_ack = self.seq_num + len(payload)
-            if header:
-                logger.vprint(
-                    f"_send_reliable_packet: esperado ACK={expected_ack}, recibido ACK={header[1]}, recibido SEQ={header[0]}"
-                )
-            else:
-                logger.vprint(
-                    f"_send_reliable_packet: esperado ACK={expected_ack}, no se recibió respuesta (timeout)."
-                )
-
-            # Verificamos que el ACK sea correcto
-            if header and (header[2] & FLAG_ACK) and header[1] == expected_ack:
-                logger.vprint("ACK para paquete confiable recibido correctamente.")
-                self.seq_num = expected_ack
-                self.ack_num = header[0] + 1
-                offset = offset + len(payload)
-                if offset + PAYLOAD_SIZE < len(data):
-                    payload = data[offset:offset+PAYLOAD_SIZE]
-                elif offset == len(data):
-                    return True
+                expected_ack = self.seq_num + len(payload)
+                if header and (header[2] & FLAG_ACK) and header[1] == expected_ack:
+                    self.seq_num = expected_ack
+                    offset += len(payload)
+                    break
                 else:
-                    payload = data[offset::]
+                    logger.vprint("Timeout o ACK incorrecto. Retransmitiendo paquete confiable...")
+                    attempts -= 1
 
-            logger.vprint(
-                "Timeout o ACK incorrecto. Retransmitiendo paquete confiable..."
-            )
-            attempts -= 1
+            if attempts == 0:
+                return False
 
-        return False
+        return True
 
+    def _recv_stop_and_wait(self, buffer_size):
+            if not self.is_connected:
+                return b""
+
+            expected_seq = self.ack_num
+            received_data = bytearray()
+
+            while True:
+                header, data, _ = self._receive_packet(timeout=None)
+                if not header:
+                    self.is_connected = False
+                    return bytes(received_data)
+
+                seq_num = header[0]
+
+                if header[2] & FLAG_PSH:
+                    # Paquete en orden exacto
+                    if seq_num == expected_seq:
+                        # Entregamos inmediatamente si coincide con lo esperado
+                        received_data.extend(data)
+                        expected_seq += len(data)
+                        self.ack_num = expected_seq
+                        self._send_packet(FLAG_ACK)
+                        if len(received_data) >= buffer_size:
+                            return bytes(received_data)
+                        continue
+
+                    else:
+                        # Paquete fuera de la ventana, reenviar último ACK
+                        logger.vprint(
+                            f"Paquete con SEQ ={seq_num} no esperado. Reenviando último ACK."
+                        )
+                        self._send_packet(FLAG_ACK)
+
+                elif header[2] & FLAG_FIN:
+                    logger.vprint("Recibido FIN. La conexión se está cerrando.")
+                    self.ack_num = header[0] + 1
+                    self._send_packet(FLAG_ACK | FLAG_FIN)
+                    self.is_connected = False
+                    return bytes(received_data)
+
+                else:
+                    logger.vprint(f"Paquete inesperado con SEQ={seq_num} [sin flag PSH]. Ignorando.")
 
     def _receive_reliable_packet(self, expected_flags=0):
         while True:
