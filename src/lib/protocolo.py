@@ -6,6 +6,8 @@ from lib.sockets import Socket
 
 from .logger import logger
 
+from .rto_estimator import RTOEstimator
+
 # --- Definición de Flags para el Encabezado del Protocolo ---
 FLAG_SYN = 0b00000001  # Iniciar conexión
 FLAG_ACK = 0b00000010  # Acuse de recibo
@@ -44,10 +46,12 @@ class Protocol:
 
         # Modo de recuperación elegido (STOP_AND_WAIT o SELECTIVE_REPEAT)
         self.recovery_mode = recovery_mode
-        self.retransmission_timeout = 1.5
+        self.retransmission_timeout = 0.5
         self.socket = Socket(local_host, local_port)
         if not client:
             self.socket.bind()
+
+        self.rto_estimator = RTOEstimator()
 
     def send(self, data: bytes, type=STOP_AND_WAIT) -> int:
         if not self.is_connected:
@@ -294,18 +298,31 @@ class Protocol:
         while offset < n:
             payload = data[offset:offset + PAYLOAD_SIZE]
 
-            attempts = 5                     # ← reset here, per packet
+            attempts = 3                     # ← reset here, per packet
             while attempts > 0:
+                send_time = time.time()
                 self._send_packet(flags, payload)
-                header,_ , _ = self._receive_packet(self.retransmission_timeout)
+
+                timeout = self.rto_estimator.get_timeout()
+                logger.vprint(f"\n[Cliente] Timeout {timeout}\n")
+                header,_ , _ = self._receive_packet(timeout)
 
                 expected_ack = self.seq_num + len(payload)
                 if header and (header[2] & FLAG_ACK) and header[1] == expected_ack:
+                    # ACK correcto → actualizar RTO con la muestra de RTT
+                    rtt_sample = time.time() - send_time
+                    self.rto_estimator.note_sample(rtt_sample)
+
                     self.seq_num = expected_ack
                     offset += len(payload)
+
+                    logger.vprint(f"\n[Cliente] RTT sample={rtt_sample:.4f}s, nuevo RTO={self.rto_estimator.get_timeout():.4f}s\n")
                     break
                 else:
                     logger.vprint("Timeout o ACK incorrecto. Retransmitiendo paquete confiable...")
+                    self.rto_estimator.backoff()
+
+                    logger.vprint(f"\n[Cliente] Backoff aplicado. Nuevo RTO={self.rto_estimator.get_timeout():.4f}s (intentos restantes={attempts})\n")
                     attempts -= 1
 
             if attempts == 0:
