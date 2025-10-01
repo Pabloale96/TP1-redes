@@ -19,6 +19,7 @@ FLAG_OP = 0b00100000
 WINDOW_SIZE = 100
 BUFFER_SIZE = 1024  # Tamaño del buffer para recv/send para selective repeat
 PAYLOAD_SIZE = 1200
+MAX_DGRAM = 2048
 
 # Formato del encabezado:
 # ! -> Network Byte Order (big-endian)
@@ -77,155 +78,212 @@ class Protocol:
         self.filename = filename
         logger.vprint(f"[CLIENT] Iniciando handshake con {server_address}")
 
-        # 1. Enviar SYN
-        self._send_packet(FLAG_SYN)
-        self.seq_num += 1
+        # --- Client ISN and initial numbers ---
+        client_isn = self.seq_num            # use existing random ISN
+        self.ack_num = 0
 
-        # 2. Esperar SYN-ACK
-        header, _, new_address = self._receive_packet(self.retransmission_timeout)
-        logger.vprint(f"[CLIENT] Recibido SYN-ACK: {header} desde {new_address}")
-        if not header or not (header[2] & FLAG_SYN and header[2] & FLAG_ACK):
-            logger.vprint("Error: Handshake fallido. No se recibió SYN-ACK.")
+        # --- 1) Send SYN reliably (retries + backoff) ---
+        attempts = 6
+        rto = float(self.retransmission_timeout)
+        synack_ok = False
+
+        while attempts > 0 and not synack_ok:
+            # Always send SYN with the SAME seq (ISN)
+            saved_seq = self.seq_num
+            self.seq_num = client_isn
+            self._send_packet(FLAG_SYN)
+            self.seq_num = saved_seq
+            logger.vprint(f"[CLIENT] SYN (ISN={client_isn}) enviado. Esperando SYN-ACK...")
+
+            deadline = time.monotonic() + rto
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                header, _, addr = self._receive_packet(max(0.0, remaining))
+                if not header:
+                    continue
+                # Only enforce same host, not same port (server uses per-connection socket)
+                if addr[0] != server_address[0]:
+                    logger.vprint(f"[CLIENT] Origen inesperado {addr}, ignorando.")
+                    continue
+                if (header[2] & FLAG_SYN) and (header[2] & FLAG_ACK):
+                    # Validate ACK of our SYN
+                    if header[1] != client_isn + 1:
+                        logger.vprint(f"[CLIENT] SYN-ACK con ACK inesperado {header[1]} (esp {client_isn+1}). Ignorando.")
+                        continue
+                    server_isn = header[0]
+                    # Set our post-SYN numbers
+                    self.peer_address = addr
+                    self.seq_num = client_isn + 1
+                    self.ack_num = server_isn + 1
+                    synack_ok = True
+                    logger.vprint(f"[CLIENT] SYN-ACK ok: server_isn={server_isn}.")
+                    break
+                else:
+                    # Ignore anything else during handshake
+                    logger.vprint(f"[CLIENT] Paquete no SYN-ACK durante handshake: flags={bin(header[2])}. Ignorando.")
+
+            if not synack_ok:
+                attempts -= 1
+                rto = min(rto * 2.0, 8.0)  # simple backoff cap
+                logger.vprint(f"[CLIENT] Reintentando SYN... intentos restantes={attempts}")
+
+        if not synack_ok:
+            logger.vprint("[CLIENT] Handshake fallido: no se recibió SYN-ACK válido.")
             return False
 
-        # 3. Actualizar direccion del peer y normalizar seq/ack
-        self.peer_address = new_address
-        # header[0] es el seq del servidor; el siguiente seq esperado desde el servidor
-        # será server_seq + 1 (porque SYN consume un número de secuencia)
-        server_seq = header[0]
-        client_seq = self.seq_num
-        self.ack_num = server_seq + 1
-        # El cliente ya incrementó self.seq_num tras enviar SYN; asegurarse de que
-        # seq_num representa el próximo número a usar para enviar.
-        self.seq_num = client_seq
-
-        # 4. Enviar ACK
+        # --- 2) Send final ACK and LINGER to re-ACK duplicates ---
+        # We send the final ACK once, then listen briefly; if a duplicate SYN-ACK arrives,
+        # re-send the ACK so the server can transition to ESTABLISHED.
         self._send_packet(FLAG_ACK)
-        logger.vprint(f"[CLIENT] Handshake completado.")
+        logger.vprint("[CLIENT] ACK final enviado. Linger para duplicados de SYN-ACK...")
 
-        # 5. Enviar la operación de forma confiable (incluye el protocolo de recuperación)
+        linger_end = time.monotonic() + 1.0  # short linger window
+        while time.monotonic() < linger_end:
+            remaining = linger_end - time.monotonic()
+            header, _, addr = self._receive_packet(max(0.0, remaining))
+            if not header:
+                continue
+            if addr != self.peer_address:
+                continue
+            if (header[2] & FLAG_SYN) and (header[2] & FLAG_ACK):
+                # Server likely missed our ACK; re-ACK
+                self.ack_num = header[0] + 1   # next expected from server
+                # Keep seq_num at client_isn+1 (no new data yet)
+                self._send_packet(FLAG_ACK)
+                logger.vprint("[CLIENT] Re-ACKeando SYN-ACK duplicado.")
+            else:
+                # Ignore anything else in linger (no state advance yet)
+                pass
+
+        logger.vprint(f"[CLIENT] Handshake completado con {self.peer_address}")
+
+        # --- 3) Send OP and FNAME reliably (as you already do) ---
+        self.is_connected = True
         chosen_protocol = self.recovery_mode
-        self.recovery_mode = chosen_protocol
-        logger.vprint(
-            f"[CLIENT] Enviando operacion de archivo: {fileop}, protocolo: {chosen_protocol}"
-        )
         payload = bytes([fileop & 0xFF, chosen_protocol & 0xFF])
-        sent = self._send_reliable_packet(FLAG_OP | FLAG_PSH, payload)
-        if not sent:
+        if not self._send_reliable_packet(FLAG_OP | FLAG_PSH, payload):
             logger.vprint("[CLIENT] No se pudo confirmar la operación con el servidor.")
+            self.is_connected = False
             return False
 
-        # 6. Enviar el nombre del archivo de forma confiable
         logger.vprint(f"[CLIENT] Enviando nombre de archivo: {self.filename}")
-        sent = self._send_reliable_packet(
-            FLAG_FNAME | FLAG_PSH, self.filename.encode("utf-8")
-        )
-
-        if not sent:
-            logger.vprint(
-                "[CLIENT] No se pudo enviar el nombre de archivo al servidor."
-            )
+        if not self._send_reliable_packet(FLAG_FNAME | FLAG_PSH, self.filename.encode("utf-8")):
+            logger.vprint("[CLIENT] No se pudo enviar el nombre de archivo al servidor.")
+            self.is_connected = False
             return False
 
         logger.vprint(f"[CLIENT] Conexión establecida con {self.peer_address}")
-        self.is_connected = True
         return True
 
     def accept(self):
+        import time
 
         logger.vprint("[SERVER] Esperando por un SYN...")
 
-        # 1. Esperar SYN (bloqueante, descarta paquetes inválidos)
+        # 1) Wait for a SYN on the listening socket (block)
         while True:
             header, _, address = self._receive_packet(timeout=None)
             logger.vprint(f"[SERVER] Recibido: {header} de {address}")
             if header and (header[2] & FLAG_SYN):
                 break
-            logger.vprint(
-                "[SERVER] Paquete inesperado recibido o error, se esperaba SYN. Descartando y esperando de nuevo."
-            )
+            logger.vprint("[SERVER] Se esperaba SYN. Ignorando paquete.")
 
-        # 2. Crear una nueva instancia de Protocol para este cliente
+        client_isn = header[0]
+        client_addr = address
+
+        # 2) Create per-client Protocol (new UDP socket on ephemeral port)
         local_host, _ = self.socket.addr
         client_protocol = Protocol(local_host, 0, client=True)
         client_protocol.socket.bind()
-        client_protocol.peer_address = address
-        client_protocol.ack_num = header[0] + 1
 
-        # 3. Enviar SYN-ACK
-        client_protocol._send_packet(FLAG_SYN | FLAG_ACK)
-        client_protocol.seq_num += 1
-        logger.vprint(f"[SERVER] SYN-ACK enviado a {address}")
+        # Log the actual bound port (not the requested 0)
+        try:
+            bound_addr = client_protocol.socket.socket.getsockname()
+            logger.vprint(f"[SERVER] Socket por-conexión en {bound_addr}")
+        except Exception:
+            pass
 
-        # 4. Esperar ACK final
-        header, _, _ = client_protocol._receive_packet(self.retransmission_timeout)
-        logger.vprint(f"[SERVER] Recibido ACK final: {header}")
-        if not header or not (header[2] & FLAG_ACK):
-            logger.vprint(
-                "[SERVER] Error: Handshake fallido. No se recibió el ACK final."
-            )
-            client_protocol.close()
-            return None
+        client_protocol.peer_address = client_addr
+        client_protocol.ack_num = client_isn + 1
 
-        # Validacion del ack
-        if header[1] != client_protocol.seq_num:
-            logger.vprint(
-                f"[SERVER] Error: Número de ACK incorrecto. Se esperaba {client_protocol.seq_num}, se recibió {header[1]}"
-            )
-            client_protocol.close()
-            return None
+        # FIX: capture and reuse the same server ISN for all SYN-ACK retransmissions
+        server_isn = client_protocol.seq_num
 
-        # Normalizar seq/ack: header[1] es el ACK del cliente indicando el siguiente seq
-        # que el cliente usará; por tanto seq_num del servidor (del lado del cliente_protocol)
-        # debe reflejar ese valor como próximo número a usar.
-        client_protocol.seq_num = header[1]
+        attempts = 6
+        rto = float(self.retransmission_timeout)  # e.g., 2s
 
-        # 5. Esperar el paquete con la operación
-        logger.vprint("[SERVER] Handshake completo. Esperando operación...")
-        header, data = client_protocol._receive_reliable_packet(expected_flags=FLAG_OP)
-        if not header or not (header[2] & FLAG_OP):
-            logger.vprint("[SERVER] Error: No se recibió el paquete con la operación.")
-            client_protocol.close()
-            return None
+        while attempts > 0:
+            # 3) Send SYN-ACK with a FIXED server ISN
+            saved = client_protocol.seq_num
+            client_protocol.seq_num = server_isn
+            client_protocol._send_packet(FLAG_SYN | FLAG_ACK)
+            client_protocol.seq_num = saved
+            logger.vprint(f"[SERVER] SYN-ACK (ISN={server_isn}) enviado a {client_addr}")
 
-        # Tomamos los dos primeros bytes del payload como operación y protocolo
-        if data and len(data) >= 2:
-            operacion = data[0]
-            proto = data[1]
-        elif data and len(data) == 1:
-            operacion = data[0]
-            proto = self.STOP_AND_WAIT
-        else:
-            logger.vprint("[SERVER] Error: Payload de operación inválido.")
-            client_protocol.close()
-            return None
+            # 4) Wait for final ACK or duplicate SYN; retransmit on timeout
+            deadline = time.monotonic() + rto
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                hdr, _, addr = client_protocol._receive_packet(max(0.0, remaining))
+                if not hdr:
+                    continue
+                if addr != client_addr:
+                    logger.vprint("[SERVER] Paquete de otro origen durante handshake; ignorando.")
+                    continue
 
-        client_protocol.operation = operacion
-        client_protocol.recovery_mode = proto
-        logger.vprint(
-            f"[SERVER] Operacion recibida: {client_protocol.operation}, protocolo: {client_protocol.recovery_mode}"
-        )
+                # Duplicate SYN from client (it didn't see our SYN-ACK) -> re-send SYN-ACK
+                if (hdr[2] & FLAG_SYN) and not (hdr[2] & FLAG_ACK) and hdr[0] == client_isn:
+                    logger.vprint("[SERVER] SYN duplicado; re-enviando SYN-ACK.")
+                    saved = client_protocol.seq_num
+                    client_protocol.seq_num = server_isn
+                    client_protocol._send_packet(FLAG_SYN | FLAG_ACK)
+                    client_protocol.seq_num = saved
+                    continue
 
-        # 6. Esperar el paquete con el nombre del archivo
-        logger.vprint("[SERVER] Esperando nombre de archivo...")
-        header, data = client_protocol._receive_reliable_packet(
-            expected_flags=FLAG_FNAME
-        )
-        if not header or not (header[2] & FLAG_FNAME):
-            logger.vprint(
-                "[SERVER] Error: No se recibió el paquete con el nombre del archivo."
-            )
-            client_protocol.close()
-            return None
+                # Final ACK from client; validate ACK number
+                if (hdr[2] & FLAG_ACK) and hdr[1] == server_isn + 1:
+                    logger.vprint("[SERVER] ACK final OK. Handshake completado.")
+                    client_protocol.seq_num = server_isn + 1
+                    client_protocol.is_connected = True
+                    # Ready to receive OP/FNAME using the per-client socket
+                    # Receive OP
+                    hdr, data = client_protocol._receive_reliable_packet(expected_flags=FLAG_OP)
+                    if not hdr or not (hdr[2] & FLAG_OP) or not data:
+                        client_protocol.close(); return None
+                    if len(data) >= 2:
+                        client_protocol.operation = data[0]
+                        client_protocol.recovery_mode = data[1]
+                    else:
+                        client_protocol.operation = data[0]
+                        client_protocol.recovery_mode = self.STOP_AND_WAIT
 
-        client_protocol.filename = data.decode("utf-8")
-        logger.vprint(
-            f"[SERVER] Nombre de archivo recibido: {client_protocol.filename}"
-        )
+                    # Receive FNAME
+                    hdr, data = client_protocol._receive_reliable_packet(expected_flags=FLAG_FNAME)
+                    if not hdr or not (hdr[2] & FLAG_FNAME) or not data:
+                        client_protocol.close(); return None
 
-        logger.vprint(f"[SERVER] Conexión aceptada de {client_protocol.peer_address}")
-        client_protocol.is_connected = True
-        return client_protocol
+                    fname = data.decode('utf-8', errors='replace').strip()
+                    if not fname:
+                        logger.vprint("[SERVER] Nombre de archivo vacío."); client_protocol.close(); return None
+                    client_protocol.filename = fname
+
+                    logger.vprint(f"[SERVER] Conexión aceptada de {client_protocol.peer_address}, archivo: {client_protocol.filename}")
+                    return client_protocol
+
+                # Anything else during handshake is ignored
+                logger.vprint(f"[SERVER] Paquete no esperado durante handshake: flags={bin(hdr[2])}")
+
+            attempts -= 1
+            rto = min(rto * 2.0, 8.0)
+            logger.vprint(f"[SERVER] Timeout esperando ACK; reintentando SYN-ACK (restan {attempts}).")
+
+        logger.vprint("[SERVER] Handshake fallido tras varios intentos.")
+        client_protocol.close()
+        return None
 
     def close(self):
         if self.is_connected:
@@ -263,7 +321,7 @@ class Protocol:
         # Aumentamos el buffer por si los payloads son relativamente grandes
         self.socket.socket.settimeout(timeout)
         try:
-            packet, address = self.socket.recvfrom(PAYLOAD_SIZE + HEADER_SIZE)
+            packet, address = self.socket.recvfrom(MAX_DGRAM)
             if len(packet) < HEADER_SIZE:
                 logger.vprint(
                     f"Paquete recibido demasiado corto ({len(packet)} bytes). Ignorando."
@@ -285,7 +343,6 @@ class Protocol:
             while not sent:
                 sent, offset = self._send_stop_and_wait(flags, data[offset::])
             return True
-
         elif type == self.SELECTIVE_REPEAT:
             return self._send_selective_repeat(data)
         else:
@@ -331,48 +388,52 @@ class Protocol:
         return True, None
 
     def _recv_stop_and_wait(self, buffer_size):
-            if not self.is_connected:
-                return b""
+        if not self.is_connected:
+            return b""
 
-            expected_seq = self.ack_num
-            received_data = bytearray()
+        expected_seq = self.ack_num
+        received_data = bytearray()
+        IDLE = 30.0  # seconds without traffic before giving up
+        deadline = time.monotonic() + IDLE
 
-            while True:
-                header, data, _ = self._receive_packet(timeout=None)
-                if not header:
+        while True:
+            remaining = max(0.0, deadline - time.monotonic())
+            header, data, _ = self._receive_packet(timeout=remaining if remaining > 0 else 0)
+            if not header:
+                # idle timeout?
+                if time.monotonic() >= deadline:
+                    logger.vprint("Idle timeout en recv Stop&Wait. Cerrando.")
                     self.is_connected = False
                     return bytes(received_data)
+                # spurious/short packet case: continue waiting
+                continue
 
-                seq_num = header[0]
+            # reset idle timer on any valid packet
+            deadline = time.monotonic() + IDLE
 
-                if header[2] & FLAG_PSH:
-                    # Paquete en orden exacto
-                    if seq_num == expected_seq:
-                        # Entregamos inmediatamente si coincide con lo esperado
-                        received_data.extend(data)
-                        expected_seq += len(data)
-                        self.ack_num = expected_seq
-                        self._send_packet(FLAG_ACK)
-                        if len(received_data) >= buffer_size:
-                            return bytes(received_data)
-                        continue
-
-                    else:
-                        # Paquete fuera de la ventana, reenviar último ACK
-                        logger.vprint(
-                            f"Paquete con SEQ ={seq_num} no esperado. Reenviando último ACK."
-                        )
-                        self._send_packet(FLAG_ACK)
-
-                elif header[2] & FLAG_FIN:
-                    logger.vprint("Recibido FIN. La conexión se está cerrando.")
-                    self.ack_num = header[0] + 1
-                    self._send_packet(FLAG_ACK | FLAG_FIN)
-                    self.is_connected = False
-                    return bytes(received_data)
-
+            seq_num = header[0]
+            if header[2] & FLAG_PSH:
+                if seq_num == expected_seq:
+                    received_data.extend(data)
+                    expected_seq += len(data)
+                    self.ack_num = expected_seq
+                    self._send_packet(FLAG_ACK)
+                    if len(received_data) >= buffer_size:
+                        return bytes(received_data)
+                    continue
                 else:
-                    logger.vprint(f"Paquete inesperado con SEQ={seq_num} [sin flag PSH]. Ignorando.")
+                    logger.vprint(f"SEQ inesperado {seq_num}. Reenviando último ACK.")
+                    self._send_packet(FLAG_ACK)
+
+            elif header[2] & FLAG_FIN:
+                logger.vprint("Recibido FIN. Cerrando.")
+                self.ack_num = header[0] + 1
+                self._send_packet(FLAG_ACK | FLAG_FIN)
+                self.is_connected = False
+                return bytes(received_data)
+
+            else:
+                logger.vprint(f"Paquete inesperado con SEQ={seq_num}. Ignorando.")
 
     def _receive_reliable_packet(self, expected_flags=0):
         while True:
