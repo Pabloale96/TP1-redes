@@ -1,0 +1,73 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Virtualenv / entornos
+.venv/
+venv/
+.env/
+.env.* 
+.python-version
+__pypackages__/
+
+# Herramientas/analizadores
+.mypy_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.pyre/
+.pyright/
+.ruff_cache/
+
+# Distribución/paquetes
+build/
+dist/
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+
+# Logs y runtime
+*.log
+*.tmp
+*.swp
+*.swo
+
+# --- LaTeX / Tectonic (docs) ---
+# Carpeta de compilación
+/docs/build/
+
+# Intermedios de LaTeX (por si se generan fuera de build)
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.out
+*.toc
+*.lot
+*.lof
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+*.nav
+*.snm
+*.vrb
+
+# Nota: si quieres versionar un PDF específico compilado, descomenta:
+# !/docs/build/main.pdf
+
+# --- Proyecto específico ---
+/tmp/
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# -- Tests files --
+/src/tests/*
