@@ -16,6 +16,7 @@ FLAG_OP = 0b00100000
 
 WINDOW_SIZE = 100
 BUFFER_SIZE = 1024  # Tamaño del buffer para recv/send para selective repeat
+PAYLOAD_SIZE = 400
 
 # Formato del encabezado:
 # ! -> Network Byte Order (big-endian)
@@ -55,8 +56,9 @@ class Protocol:
         if self._send_reliable_packet(FLAG_PSH | FLAG_ACK, data, type=type):
             return len(data)
 
-    def recv(self, buffer_size: int, type: int) -> bytes:
-
+    def recv(self, payload_size: int, type: int) -> bytes:
+        # Sumamos el header size al paquete
+        buffer_size = payload_size + HEADER_SIZE
         # Seleccionar el método de recepción según el tipo solicitado.
         print("\n\n\n\n")
         print(type)
@@ -287,18 +289,66 @@ class Protocol:
             return self._send_selective_repeat(data)
         else:
             raise ValueError(f"Tipo de envío desconocido: {type}")
+    def _recv_stop_and_wait(self, buffer_size):
+        if not self.is_connected:
+            return b""
+
+        expected_seq = self.ack_num
+        received_data = bytearray()
+
+        while True:
+            header, data, _ = self._receive_packet(timeout=None)
+            if not header:
+                self.is_connected = False
+                return bytes(received_data)
+
+            seq_num = header[0]
+
+            if header[2] & FLAG_PSH:
+                # Paquete en orden exacto
+                if seq_num == expected_seq:
+                    # Entregamos inmediatamente si coincide con lo esperado
+                    received_data.extend(data)
+                    expected_seq += len(data)
+                    self.ack_num = expected_seq
+                    self._send_packet(FLAG_ACK)
+                    if len(received_data) >= buffer_size:
+                        return bytes(received_data)
+                    continue
+
+                else:
+                    # Paquete fuera de la ventana, reenviar último ACK
+                    logger.vprint(
+                        f"Paquete con SEQ ={seq_num} no esperado. Reenviando último ACK."
+                    )
+                    self._send_packet(FLAG_ACK)
+
+            elif header[2] & FLAG_FIN:
+                logger.vprint("Recibido FIN. La conexión se está cerrando.")
+                self.ack_num = header[0] + 1
+                self._send_packet(FLAG_ACK | FLAG_FIN)
+                self.is_connected = False
+                return bytes(received_data)
+
+            else:
+                logger.vprint(f"Paquete inesperado con SEQ={seq_num} [sin flag PSH]. Ignorando.")
 
     def _send_stop_and_wait(self, flags, data):
+        offset = 0
+        if len(data) > PAYLOAD_SIZE:
+            payload = data[offset:offset+PAYLOAD_SIZE]
+        else:
+            payload = data
 
         attempts = 5  # Número máximo de reintentos
         while attempts > 0:
-            self._send_packet(flags, data)
+            self._send_packet(flags, payload)
 
             header, _, _ = self._receive_packet(self.retransmission_timeout)
 
             # Si se recibe un ACK válido para nuestros datos
             # El ACK que esperamos debe confirmar el siguiente byte después de los datos enviados.
-            expected_ack = self.seq_num + len(data)
+            expected_ack = self.seq_num + len(payload)
             if header:
                 logger.vprint(
                     f"_send_reliable_packet: esperado ACK={expected_ack}, recibido ACK={header[1]}, recibido SEQ={header[0]}"
@@ -313,7 +363,13 @@ class Protocol:
                 logger.vprint("ACK para paquete confiable recibido correctamente.")
                 self.seq_num = expected_ack
                 self.ack_num = header[0] + 1
-                return True
+                offset = offset + len(payload)
+                if offset + PAYLOAD_SIZE < len(data):
+                    payload = data[offset:offset+PAYLOAD_SIZE]
+                elif offset == len(data):
+                    return True
+                else:
+                    payload = data[offset::]
 
             logger.vprint(
                 "Timeout o ACK incorrecto. Retransmitiendo paquete confiable..."
