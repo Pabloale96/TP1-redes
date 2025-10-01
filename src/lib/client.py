@@ -5,6 +5,7 @@ from .file_manager import FileManager
 from .logger import logger
 from .protocolo import HEADER_SIZE, Protocol
 
+CHUNK_SIZE = 1024
 
 class Client:
 
@@ -52,7 +53,7 @@ class Client:
         # 1. Crear una instancia de FileManager en modo lectura
         #    (esto lanzará excepción si el archivo no existe o no se puede leer)
         self._print_info(string_verbose="Creating file_manager...")
-        file_manager = FileManager(self.filepath, "r")
+        file_manager = FileManager(self.filepath, "r", chunk_size=CHUNK_SIZE)
         self._print_info(string_verbose="File_manager has been created")
 
         # 2. Conectar al servidor
@@ -105,7 +106,7 @@ class Client:
         # No podemos saber el tamaño del archivo de antemano en el download,
         # así que no mostraremos porcentaje, solo bytes recibidos.
         chunk_size = file_manager.getChunkSize()
-        size = chunk_size + HEADER_SIZE
+        size = chunk_size
         while True:
             chunk = self.conn.recv(size, type=self.protocolo)
             if not chunk:
