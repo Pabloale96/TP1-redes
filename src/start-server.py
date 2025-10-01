@@ -1,5 +1,6 @@
 import argparse
-from lib.server import server
+from lib.server import Server
+from lib.logger import logger
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='start-server.py',
@@ -26,10 +27,14 @@ if __name__ == '__main__':
                         help="storage dir path")
     args = parser.parse_args()
 
-    if args.verbose:
-        print(args.addr)
-        print(args.port)
-        print(args.dirpath)
+    if args.quiet and args.verbose:
+        parser.error("argumento -q/--quiet: no esta permito con el argumento -v/--verbose")
 
-    server = server(args.addr, args.port)
-    server.upload()
+    logger.info("creando servidor...")
+    server = Server(args.addr, args.port,storage_dir=args.dirpath)
+    
+    try:
+        logger.info("escuchando...")
+        server.start()
+    except KeyboardInterrupt:
+        logger.info("\nCerrando el servidor.")

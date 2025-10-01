@@ -1,5 +1,6 @@
+from lib.client import Client
+import time
 import argparse
-from lib.client import client
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='upload.py',
@@ -20,7 +21,8 @@ if __name__ == '__main__':
                         type=int, default=65432,
                         help="server port")
     parser.add_argument('-s', '--filepath',
-                        type=str, default="",
+                        type=str,
+                        required=True,
                         help="src source file path")
     parser.add_argument('-n', '--filename',
                         type=str,
@@ -31,13 +33,14 @@ if __name__ == '__main__':
                         help="Stop & Wait or Selective Repeat[SW or SR]")
     args = parser.parse_args()
 
-    if args.verbose:
-        print(args.addr)
-        print(args.port)
-        print(args.filepath)
-        print(args.filename)
-        print(args.protocol)
+    if args.quiet and args.verbose:
+        parser.error("argumento -q/--quiet: no esta permito con el argumento -v/--verbose")
 
-client = client(args.addr, args.port)
-client.upload(args.filepath, args.filename)
-client.close()
+    client = Client(args.addr, args.port, args.filepath, args.filename, args.verbose, args.quiet, 0, args.protocol)
+
+    start = time.time()
+    stats = client.upload()
+    end = time.time()
+    client.close()
+    print(f"Se termino de cargar en: {end-start:.4f} seconds")
+ 
