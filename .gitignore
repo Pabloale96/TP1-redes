@@ -1,0 +1,97 @@
+# ── Python básico ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so                      # extensiones C
+__pypackages__/           # PEP 582
+
+# ── Entornos / dependencias ──────────────────────────────────
+.venv/
+venv*/
+env*/
+.env
+.env.*
+.envrc
+.direnv/
+pip-wheel-metadata/
+.eggs/
+*.egg-info/
+*.egg
+
+# ── Build / distribución ─────────────────────────────────────
+build/
+dist/
+downloads/
+wheels/
+share/python-wheels/
+MANIFEST
+
+# ── Tests / cobertura ────────────────────────────────────────
+.pytest_cache/
+.nox/
+.tox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.cache/
+nosetests.xml
+*.cover
+*.py,cover
+
+# ── Tipado / linters ─────────────────────────────────────────
+.mypy_cache/
+.pyre/
+.pytype/
+.pylint.d/
+.ruff_cache/
+.pyright/
+
+# ── Jupyter ──────────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ── Runtime (sockets/servicios) ──────────────────────────────
+logs/
+*.log
+*.out
+*.err
+*.pid
+*.pid.lock
+*.sock
+*.db
+*.sqlite
+*.sqlite3
+*.trace
+
+# Capturas de red / trazas
+captures/
+*.pcap
+*.pcapng
+*.cap
+
+# ── TLS / claves locales (no subir) ──────────────────────────
+*.pem
+*.key
+*.crt
+*.csr
+
+# ── Config local ─────────────────────────────────────────────
+*.local.yml
+*.local.yaml
+*.local.json
+*.ini.local
+
+# ── IDE / editor / SO ────────────────────────────────────────
+.vscode/
+.idea/
+*.code-workspace
+*~
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── (Opcional) Lockfiles ─────────────────────────────────────
+# Para librerías suele ignorarse; para apps suele versionarse.
+#poetry.lock
+#Pipfile.lock

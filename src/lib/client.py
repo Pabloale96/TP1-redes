@@ -1,3 +1,4 @@
+
 from lib.protocol import Protocol
 UPLOAD = 1
 DOWNLOAD = 2
@@ -12,6 +13,10 @@ SYN = 1
 ACK = 2
 FIN = 3
 
+
+import ipaddress
+import file_manager as fm
+import os
 
 class client:
     def __init__(self, addr, port):
