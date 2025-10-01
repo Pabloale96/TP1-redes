@@ -32,7 +32,7 @@ class Protocol:
     SELECTIVE_REPEAT = 2
     HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 
-    def __init__(self, local_host="127.0.0.1", local_port=0, client=False):
+    def __init__(self, local_host="127.0.0.1", local_port=0, client=False, recovery_mode=STOP_AND_WAIT):
         self.is_connected = False
         self.socket = None
         self.peer_address = None
@@ -42,7 +42,7 @@ class Protocol:
         self.operation = None
 
         # Modo de recuperación elegido (STOP_AND_WAIT o SELECTIVE_REPEAT)
-        self.recovery_mode = self.STOP_AND_WAIT
+        self.recovery_mode = recovery_mode
         self.retransmission_timeout = 2
         self.socket = Socket(local_host, local_port)
         if not client:
@@ -58,15 +58,21 @@ class Protocol:
     def recv(self, buffer_size: int, type: int) -> bytes:
 
         # Seleccionar el método de recepción según el tipo solicitado.
-        # `switch/case` no es una construcción válida en Python; usar if/elif.
+        print("\n\n\n\n")
+        print(type)
+        print("\n\n\n\n")
+
         if type == self.STOP_AND_WAIT:
+            print("\n\n\n\n")
+            print("HOLAAAAAAA")
+            print("\n\n\n\n")
             return self._recv_stop_and_wait(buffer_size)
         elif type == self.SELECTIVE_REPEAT:
             return self._recv_selective_repeat(buffer_size)
         else:
             raise ValueError(f"Tipo de recepción desconocido: {type}")
 
-    def connect(self, server_address, filename: str, fileop=0, protocol=None) -> bool:
+    def connect(self, server_address, filename: str, fileop=0) -> bool:
 
         self.peer_address = server_address
         self.filename = filename
@@ -99,7 +105,10 @@ class Protocol:
         logger.vprint(f"[CLIENT] Handshake completado.")
 
         # 5. Enviar la operación de forma confiable (incluye el protocolo de recuperación)
-        chosen_protocol = protocol if protocol is not None else self.STOP_AND_WAIT
+        print("\n\n\n\n")
+        print(self.recovery_mode)
+        print("\n\n\n\n")
+        chosen_protocol = self.recovery_mode
         self.recovery_mode = chosen_protocol
         logger.vprint(
             f"[CLIENT] Enviando operacion de archivo: {fileop}, protocolo: {chosen_protocol}"

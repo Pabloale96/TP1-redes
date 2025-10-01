@@ -38,7 +38,7 @@ class Client:
         logger.set_verbose(self.verbose)
         logger.set_quiet(self.quiet)
 
-        self.conn = Protocol(addr, port, client=True)
+        self.conn = Protocol(addr, port, client=True, recovery_mode=self.protocolo)
 
     def close(self):
         self.conn.close()
@@ -95,7 +95,7 @@ class Client:
         logger.vprint(self.addr, self.port, self.filename)
 
         # 2. Conectar al servidor con fileop=1 para descarga
-        if not self.conn.connect((self.addr, self.port), self.filename, fileop=1, protocol=self.protocolo):
+        if not self.conn.connect((self.addr, self.port), self.filename, fileop=1):
             self._print_info(string_normal="Could not connect to the server.", string_verbose="Connection failed.")
             return
 
