@@ -1,8 +1,9 @@
 import ipaddress
-from .file_manager import FileManager
 import os
-from .protocolo import Protocol, HEADER_SIZE
+
+from .file_manager import FileManager
 from .logger import logger
+from .protocolo import HEADER_SIZE, Protocol
 
 
 class Client:
@@ -51,7 +52,7 @@ class Client:
         # 1. Crear una instancia de FileManager en modo lectura
         #    (esto lanzará excepción si el archivo no existe o no se puede leer)
         self._print_info(string_verbose="Creating file_manager...")
-        file_manager = FileManager(self.filepath + '/' + self.filename, "r")
+        file_manager = FileManager(self.filepath, "r")
         self._print_info(string_verbose="File_manager has been created")
 
         # 2. Conectar al servidor
@@ -62,7 +63,7 @@ class Client:
             return
         
         # 3. Enviar el primer chunk y luego sucesivos
-        self._print_info(string_verbose="Connectd with server")
+        self._print_info(string_verbose="Connected with server")
         self._print_info(string_verbose="Reading first chunk...")
         chunk = file_manager.read_chunk()
 

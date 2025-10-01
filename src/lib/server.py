@@ -1,8 +1,11 @@
-from .protocolo import Protocol, HEADER_SIZE as PROTO_HEADER_SIZE
-from .file_manager import FileManager
-import threading
 import os
+import threading
+
+from .file_manager import FileManager
 from .logger import logger
+from .protocolo import HEADER_SIZE as PROTO_HEADER_SIZE
+from .protocolo import Protocol
+
 
 def handle_client(client_protocol: Protocol, storage_dir: str):
 
