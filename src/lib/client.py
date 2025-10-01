@@ -5,7 +5,7 @@ from .file_manager import FileManager
 from .logger import logger
 from .protocolo import HEADER_SIZE, Protocol
 
-CHUNK_SIZE = 1024
+CHUNK_SIZE = 1024 * 4
 
 class Client:
 

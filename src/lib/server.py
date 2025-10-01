@@ -6,6 +6,7 @@ from .logger import logger
 from .protocolo import HEADER_SIZE as PROTO_HEADER_SIZE
 from .protocolo import Protocol
 
+CHUNK_SIZE = 1024 * 4
 
 def handle_client(client_protocol: Protocol, storage_dir: str):
 
@@ -17,11 +18,11 @@ def handle_client(client_protocol: Protocol, storage_dir: str):
         filepath = os.path.join(storage_dir, filename)
         logger.info(f"[Hilo {threading.get_ident()}] Guardando en: {filepath}")
         modo = "r" if client_protocol.operation == 1 else "w"
-        file_manager = FileManager(filepath, modo)
+        file_manager = FileManager(filepath, modo, chunk_size = CHUNK_SIZE)
         chunk_size = file_manager.getChunkSize()
 
         header_size = PROTO_HEADER_SIZE
-        size = chunk_size + header_size
+        size = chunk_size
 
         if modo == "w":
             while True:

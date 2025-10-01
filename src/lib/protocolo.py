@@ -16,7 +16,7 @@ FLAG_OP = 0b00100000
 
 WINDOW_SIZE = 100
 BUFFER_SIZE = 1024  # Tamaño del buffer para recv/send para selective repeat
-PAYLOAD_SIZE = 400
+PAYLOAD_SIZE = 1200
 
 # Formato del encabezado:
 # ! -> Network Byte Order (big-endian)
@@ -44,7 +44,7 @@ class Protocol:
 
         # Modo de recuperación elegido (STOP_AND_WAIT o SELECTIVE_REPEAT)
         self.recovery_mode = recovery_mode
-        self.retransmission_timeout = 2
+        self.retransmission_timeout = 1.5
         self.socket = Socket(local_host, local_port)
         if not client:
             self.socket.bind()
@@ -106,15 +106,18 @@ class Protocol:
             f"[CLIENT] Enviando operacion de archivo: {fileop}, protocolo: {chosen_protocol}"
         )
         payload = bytes([fileop & 0xFF, chosen_protocol & 0xFF])
-        if not self._send_reliable_packet(FLAG_OP | FLAG_PSH, payload):
+        sent = self._send_reliable_packet(FLAG_OP | FLAG_PSH, payload)
+        if not sent:
             logger.vprint("[CLIENT] No se pudo confirmar la operación con el servidor.")
             return False
 
         # 6. Enviar el nombre del archivo de forma confiable
         logger.vprint(f"[CLIENT] Enviando nombre de archivo: {self.filename}")
-        if not self._send_reliable_packet(
+        sent = self._send_reliable_packet(
             FLAG_FNAME | FLAG_PSH, self.filename.encode("utf-8")
-        ):
+        )
+
+        if not sent:
             logger.vprint(
                 "[CLIENT] No se pudo enviar el nombre de archivo al servidor."
             )
@@ -256,7 +259,7 @@ class Protocol:
         # Aumentamos el buffer por si los payloads son relativamente grandes
         self.socket.socket.settimeout(timeout)
         try:
-            packet, address = self.socket.recvfrom(1024)
+            packet, address = self.socket.recvfrom(PAYLOAD_SIZE + HEADER_SIZE)
             if len(packet) < HEADER_SIZE:
                 logger.vprint(
                     f"Paquete recibido demasiado corto ({len(packet)} bytes). Ignorando."
@@ -274,7 +277,11 @@ class Protocol:
 
     def _send_reliable_packet(self, flags, data, type=STOP_AND_WAIT):
         if type == self.STOP_AND_WAIT:
-            return self._send_stop_and_wait(flags, data)
+            sent, offset = self._send_stop_and_wait(flags, data)
+            while not sent:
+                sent, offset = self._send_stop_and_wait(flags, data[offset::])
+            return True
+
         elif type == self.SELECTIVE_REPEAT:
             return self._send_selective_repeat(data)
         else:
@@ -302,9 +309,9 @@ class Protocol:
                     attempts -= 1
 
             if attempts == 0:
-                return False
+                return False, offset
 
-        return True
+        return True, None
 
     def _recv_stop_and_wait(self, buffer_size):
             if not self.is_connected:
