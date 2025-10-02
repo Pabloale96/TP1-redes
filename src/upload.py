@@ -38,9 +38,11 @@ if __name__ == '__main__':
 
     client = Client(args.addr, args.port, args.filepath, args.filename, args.verbose, args.quiet, 0, args.protocol)
 
-    start = time.time()
-    stats = client.upload()
-    end = time.time()
-    client.close()
-    print(f"Se termino de cargar en: {end-start:.4f} seconds")
- 
+    try:
+        start = time.time()
+        stats = client.upload()
+        end = time.time()
+        print(f"Se termino de cargar en: {end-start:.4f} seconds")
+    except Exception as e: 
+        client.close()
+        raise Exception("Error: {e}")

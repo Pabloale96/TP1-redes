@@ -36,9 +36,12 @@ if __name__ == '__main__':
     if args.quiet and args.verbose:
         parser.error("argumento -q/--quiet: no esta permito con el argumento -v/--verbose")
 
-    client = Client(args.addr, args.port, args.dst, args.name, args.verbose, args.quiet, 1, args.protocol)
-    start = time.time()
-    client.download()
-    end = time.time()
-    client.close()
-    print(f"Se termino de cargar en: {end-start:.4f} seconds")
+    try:
+        client = Client(args.addr, args.port, args.dst, args.name, args.verbose, args.quiet, 1, args.protocol)
+        start = time.time()
+        client.download()
+        end = time.time()
+        print(f"Se termino de cargar en: {end-start:.4f} seconds")
+    except Exception as e:
+        client.close()
+        raise Exception("Error: {e}")

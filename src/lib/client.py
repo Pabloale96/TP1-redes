@@ -42,7 +42,8 @@ class Client:
         self.conn = Protocol(addr, port, client=True, recovery_mode=self.protocolo)
 
     def close(self):
-        self.conn.close()
+        if self.conn.is_connected:
+            self.conn.close()
 
     def upload(self):
         self._print_info(string_verbose="Validating filepath...")
@@ -84,8 +85,7 @@ class Client:
         self._print_info(
             string_normal=f"{read_bytes_count}[B] have been uploaded to {self.filename} in the server"
         )
-        self.conn.close()
-
+        
     def download(self):
         
         # 1. Validar que la ruta de destino exista (no el archivo, que se creará)
@@ -124,7 +124,6 @@ class Client:
         self._print_info(
             string_normal=f"Total {received_bytes_count}[B] have been downloaded to {os.path.join(self.filepath, self.filename)}"
         )
-        self.conn.close()
 
 
     def _print_info(self, string_normal=None, string_verbose=None):

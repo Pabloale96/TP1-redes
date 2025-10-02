@@ -287,22 +287,95 @@ class Protocol:
         client_protocol.close()
         return None
 
-    def close(self):
-        if self.is_connected:
-            self.is_connected = False
-            self._send_packet(FLAG_FIN)
-            header, _, _ = self._receive_packet(timeout=1.0)
-            if header and (header[2] & FLAG_ACK):
-                logger.vprint("Cierre de conexión confirmado.")
-            else:
-                logger.vprint(
-                    "No se recibió confirmación de cierre (FIN-ACK). Cerrando de todos modos."
-                )
 
-        if self.socket:
+    def close(self, attempts: int = 6, linger: float = None):
+        """
+        Reliable half/whole close:
+          1) Send FIN reliably (retransmit with RTO/backoff) until ACKed.
+          2) ACK the peer's FIN (whenever it arrives; possibly together with our ACK).
+          3) TIME-WAIT: linger briefly to re-ACK duplicate FINs.
+        """
+        if not self.socket:
+            return
+
+        try:
+            if not self.is_connected:
+                # Best-effort TIME-WAIT anyway
+                self.socket.close()
+                logger.vprint("Socket cerrado.")
+                return
+
+            fin_seq = self.seq_num
+            fin_acked = False
+            peer_fin_seen = False
+
+            rto = max(0.3, float(self.rto_estimator.get_timeout()))
+            tries = attempts
+
+            # 1) Send FIN reliably
+            while tries > 0 and not fin_acked:
+                t0 = time.time()
+                self._send_packet(FLAG_FIN)
+
+                deadline = time.monotonic() + rto
+                while time.monotonic() < deadline:
+                    header, _, addr = self._receive_packet(deadline - time.monotonic())
+                    if not header or addr != self.peer_address:
+                        continue
+
+                    flags = header[2]
+
+                    # ACK for our FIN?
+                    if (flags & FLAG_ACK) and header[1] >= fin_seq + 1:
+                        fin_acked = True
+                        self.rto_estimator.note_sample(time.time() - t0)
+                        self.seq_num = header[1]  # keep seq in sync
+                        break
+
+                    # Peer FIN (maybe together with ACK)
+                    if flags & FLAG_FIN:
+                        self.ack_num = header[0] + 1
+                        self._send_packet(FLAG_ACK)
+                        peer_fin_seen = True
+                        # keep waiting in this window; we still need our FIN ACK
+
+                if not fin_acked:
+                    self.rto_estimator.backoff()
+                    rto = min(8.0, self.rto_estimator.get_timeout())
+                    tries -= 1
+
+            # 2) If we haven't seen peer FIN yet, wait a bit for it and ACK it
+            wait_for_fin = (linger if linger is not None
+                            else max(1.0, 2.0 * self.rto_estimator.get_timeout()))
+            end = time.monotonic() + wait_for_fin
+            while time.monotonic() < end:
+                header, _, addr = self._receive_packet(end - time.monotonic())
+                if header and addr == self.peer_address and (header[2] & FLAG_FIN):
+                    self.ack_num = header[0] + 1
+                    self._send_packet(FLAG_ACK)
+                    peer_fin_seen = True
+                    # Keep looping: this doubles as TIME-WAIT too
+
+            # 3) Short TIME-WAIT to re-ACK duplicate FINs
+            tw = max(0.5, self.rto_estimator.get_timeout())
+            tw_end = time.monotonic() + tw
+            while time.monotonic() < tw_end:
+                header, _, addr = self._receive_packet(tw_end - time.monotonic())
+                if header and addr == self.peer_address and (header[2] & FLAG_FIN):
+                    self.ack_num = header[0] + 1
+                    self._send_packet(FLAG_ACK)
+
+            logger.vprint(
+                "Cierre de conexiÃ³n "
+                + ("confirmado (FIN ACKed)" if fin_acked else "best-effort (FIN no confirmado)")
+                + (", FIN del peer visto" if peer_fin_seen else ", FIN del peer no visto")
+                + "."
+            )
+
+        finally:
+            self.is_connected = False
             self.socket.close()
             logger.vprint("Socket cerrado.")
-        self.is_connected = False
 
     def _pack_header(self, seq, ack, flags):
         return struct.pack(HEADER_FORMAT, seq, ack, flags, 0)
@@ -342,10 +415,15 @@ class Protocol:
     def _send_reliable_packet(self, flags, data, type=STOP_AND_WAIT):
         if type == self.STOP_AND_WAIT:
             sent, offset = self._send_stop_and_wait(flags, data)
-            while not sent:
+            i = 0
+            while i < 3 and not sent:
                 data = data[offset::]
                 sent, offset = self._send_stop_and_wait(flags, data)
-            return True
+                i+=1
+            if not sent:
+                logger.vprint("ERROR: Error de conexion")
+                raise Exception("Error de Conexión")
+            return sent
         elif type == self.SELECTIVE_REPEAT:
             return self._send_selective_repeat(data)
         else:
@@ -354,9 +432,9 @@ class Protocol:
     def _send_stop_and_wait(self, flags, data):
         offset = 0
         n = len(data)
-        sent_flag_ACK = False
+        sent_flag = False
 
-        while offset < n or ((flags & FLAG_ACK) != 0 and not sent_flag_ACK):
+        while offset < n or ((flags & (FLAG_ACK | FLAG_FIN)) != 0 and not sent_flag):
             payload = data[offset:offset + PAYLOAD_SIZE]
 
             attempts = 3                     # ← reset here, per packet
@@ -382,7 +460,7 @@ class Protocol:
 
                     self.seq_num = header[1]
                     if len(payload) == 0:
-                        sent_flag_ACK = True
+                        sent_flag = True
 
                     if header[1] == expected_ack:
                         offset += len(payload)
@@ -453,8 +531,6 @@ class Protocol:
             elif header[2] & FLAG_FIN:
                 logger.vprint("Recibido FIN. Cerrando.")
                 self.ack_num = header[0] + 1
-                self._send_packet(FLAG_ACK | FLAG_FIN, b"")
-                self.is_connected = False
                 return None, bytes(received_data)
 
             else:
