@@ -5,7 +5,6 @@ import time
 from lib.sockets import Socket
 
 from .logger import logger
-
 from .rto_estimator import RTOEstimator
 
 # --- Definición de Flags para el Encabezado del Protocolo ---
@@ -16,11 +15,11 @@ FLAG_PSH = 0b00001000  # Empujar datos (indica que el paquete tiene payload)
 FLAG_FNAME = 0b00010000  # Indica que el payload es un nombre de archivo
 FLAG_OP = 0b00100000
 
-WINDOW_SIZE = 100
+WINDOW_SIZE = 25
 BUFFER_SIZE = 1024  # Tamaño del buffer para recv/send para selective repeat
 PAYLOAD_SIZE = 1024
 MAX_DGRAM = 2048
-
+IDLE_TIME = 30.0
 # Formato del encabezado:
 # ! -> Network Byte Order (big-endian)
 # I -> Unsigned Integer (4 bytes) para número de secuencia
@@ -409,8 +408,7 @@ class Protocol:
 
         expected_seq = self.ack_num
         received_data = bytearray()
-        IDLE = 30.0  # seconds without traffic before giving up
-        deadline = time.monotonic() + IDLE
+        deadline = time.monotonic() + IDLE_TIME
 
         # ack 5
 
@@ -427,7 +425,7 @@ class Protocol:
                 continue
 
             # reset idle timer on any valid packet
-            deadline = time.monotonic() + IDLE
+            deadline = time.monotonic() + IDLE_TIME
 
             seq_num = header[0]
             if header[2] & FLAG_OP or header[2] & FLAG_FNAME:
@@ -471,127 +469,197 @@ class Protocol:
         else:
             raise ValueError(f"Tipo de recepción desconocido: {type}")
 
-    def _send_selective_repeat(self, data):
+
+    def _send_selective_repeat(self, data: bytes):
         if not self.is_connected:
             return False
 
-        # Enviar en fragmentos de tamaño buffer_size
-        offset = 0
-        attempts_limit = 5
+        window_bytes = WINDOW_SIZE * PAYLOAD_SIZE
 
-        while offset < len(data):
-            chunk = data[offset : offset + BUFFER_SIZE]  # Tomar un fragmento
+        data_len = len(data)
+        data_end_seq = self.seq_num + data_len
 
-            # Enviar el fragmento con PSH
-            current_seq = self.seq_num
-            self._send_packet(FLAG_PSH, chunk)
+        send_base = self.seq_num           # lowest unacked absolute seq
+        next_seq  = self.seq_num           # next absolute seq to send
 
-            # Esperar ACK que confirme next byte esperado
-            attempts = attempts_limit
-            ack_received = False
-            while attempts > 0:
-                header, _, _ = self._receive_packet(self.retransmission_timeout)
-                if header and (header[2] & FLAG_ACK):
-                    expected_ack = current_seq + len(chunk)
+        # in_flight: seq -> { "data": bytes, "sent": float, "attempts": int }
+        in_flight = {}
 
-                    # El receptor pone header[1] como ack_num (siguiente seq esperado)
-                    if header[1] == expected_ack:
-                        ack_received = True
-                        logger.vprint(
-                            f"ACK recibido para SEQ={current_seq} (ACK={header[1]})"
-                        )
-                        self.seq_num = expected_ack
-                        self.ack_num = header[0] + 1
-                        break
-                    else:
-                        logger.vprint(
-                            f"ACK recibido pero con valor inesperado {header[1]} (se esperaba {expected_ack})."
-                        )
-                else:
-                    logger.vprint("Timeout esperando ACK. Retransmitiendo chunk...")
+        attempts_limit = 10  # per-segment cap to avoid infinite retries
+
+        while send_base < data_end_seq or in_flight:
+            # 1. Fill the window
+            while next_seq < data_end_seq and next_seq < send_base + window_bytes:
+                off = next_seq - self.seq_num
+                chunk = data[off : off + PAYLOAD_SIZE]
+                if not chunk:
+                    break
 
                 self._send_packet(FLAG_PSH, chunk)
-                attempts -= 1
+                in_flight[next_seq] = {
+                    "data": chunk,
+                    "sent": time.time(),
+                    "attempts": 1,
+                }
+                logger.vprint(f"[SR] Sent chunk SEQ={next_seq} LEN={len(chunk)}")
+                next_seq += len(chunk)
 
-            if not ack_received:
-                logger.vprint(
-                    "No se recibió ACK tras varios intentos. Abortar envío Selective Repeat."
-                )
-                return False
+            # 2.Compute the nearest timer expiry for blocking receive
+            if in_flight:
+                now = time.time()
+                rto = self.rto_estimator.get_timeout()
+                # time left for each in-flight seg
+                min_left = min(max(0.0, (seg["sent"] + rto) - now) for seg in in_flight.values())
+            else:
+                # Nothing in flight, but still have data to send (rare). Don't block long.
+                min_left = 0.05
 
-            offset += len(chunk)
+            # 3x. Wait for an ACK up to the nearest timeout
+            header, _, _ = self._receive_packet(timeout=min_left)
 
-        return True
+            if header and (header[2] & FLAG_ACK):
+                ack_val = header[1]  # cumulative next expected by receiver
+                # Only process forward progress
+                if ack_val > send_base:
+                    # Use the oldest newly-acked segment to compute RTT
+                    now = time.time()
+                    # Collect acks to remove (seq < ack_val)
+                    acked_seqs = sorted([seq for seq in in_flight.keys() if seq < ack_val])
+                    if acked_seqs:
+                        oldest_seq = acked_seqs[0]
+                        # RTT sample from that segment
+                        rtt_sample = now - in_flight[oldest_seq]["sent"]
+                        self.rto_estimator.note_sample(rtt_sample)
+                        logger.vprint(f"[SR] ACK advanced to {ack_val}, RTT={rtt_sample:.4f}, RTO={self.rto_estimator.get_timeout():.4f}")
 
-    def _recv_selective_repeat(self, buffer_size: int) -> bytes:
+                    # Drop all fully acked segments
+                    for seq in acked_seqs:
+                        in_flight.pop(seq, None)
 
+                    # Slide the window
+                    send_base = ack_val
+                    self.seq_num = ack_val  # keep sender seq in sync with peer’s cumulative ACK
+                else:
+                    # Duplicate/old ACK -> ignore (optionally count for fast retransmit)
+                    logger.vprint(f"[SR] Dup/old ACK={ack_val} (base={send_base})")
+            else:
+                # 4. Timeout path: retransmit any expired segments (oldest first to be gentle)
+                if in_flight:
+                    now = time.time()
+                    rto = self.rto_estimator.get_timeout()
+
+                    # Find expired segments
+                    expired = sorted(
+                        (seq for seq, seg in in_flight.items() if now - seg["sent"] >= rto)
+                    )
+                    if expired:
+                        # Retransmit the earliest expired one first (avoid burst)
+                        seq = expired[0]
+                        seg = in_flight[seq]
+                        if seg["attempts"] >= attempts_limit:
+                            logger.vprint(f"[SR] Attempts exceeded for SEQ={seq}. Aborting.")
+                            return False
+
+                        self._send_packet(FLAG_PSH, seg["data"])
+                        seg["sent"] = time.time()
+                        seg["attempts"] += 1
+                        # Apply backoff once per expiry event
+                        self.rto_estimator.backoff()
+                        logger.vprint(f"[SR] Retransmit SEQ={seq} (attempt {seg['attempts']}), new RTO={self.rto_estimator.get_timeout():.4f}")
+                    # else: no expired (race with receive timeout); loop again
+                # else: nothing in flight; loop will refill window
+
+    def _recv_selective_repeat(self, buffer_size: int):
         if not self.is_connected:
-            return b""
+            return None, b""
 
+        expected_seq_from_client = self.ack_num           # next in-order byte we want
         received_data = bytearray()
-        expected_seq = self.ack_num
-        window_size = 5
-        buffer = {}
+        buffer = {}                           # seq -> bytes (out-of-order)
+        window_bytes = WINDOW_SIZE * PAYLOAD_SIZE
+
+        deadline = time.monotonic() + IDLE_TIME
 
         while True:
-            header, data, _ = self._receive_packet(timeout=None)
+            remaining = max(0.0, deadline - time.monotonic())
+            header, data, _ = self._receive_packet(timeout=remaining if remaining > 0 else 0)
             if not header:
-                self.is_connected = False
-                return bytes(received_data)
+                if time.monotonic() >= deadline:
+                    logger.vprint("Idle timeout en recv SR. Cerrando.")
+                    self.is_connected = False
+                    return None, bytes(received_data)
+                continue
 
-            seq_num = header[0]
+            # reset idle timer on any valid packet
+            deadline = time.monotonic() + IDLE_TIME
 
-            if header[2] & FLAG_PSH:
-                # Paquete en orden exacto
-                if seq_num == expected_seq:
-                    # Entregamos inmediatamente si coincide con lo esperado
+            seq = header[0]
+            flags = header[2]
+
+            # Control messages used in the handshake payload path 
+            if (flags & FLAG_OP) or (flags & FLAG_FNAME):
+                if seq == expected_seq_from_client:
                     received_data.extend(data)
-                    expected_seq += len(data)
-                    self.ack_num = expected_seq
+                    expected_seq_from_client += len(data)
+                    self.ack_num = expected_seq_from_client
                     self._send_packet(FLAG_ACK)
-                    if len(received_data) >= buffer_size:
-                        return bytes(received_data)
+                    return header, bytes(received_data)
+                else:
+                    # Out-of-order control payload → buffer and ACK cumulative expected
+                    if expected_seq_from_client <= seq < expected_seq_from_client + window_bytes and seq not in buffer:
+                        buffer[seq] = data
+                    self.ack_num = expected_seq_from_client
+                    self._send_packet(FLAG_ACK)
+                    # keep waiting until we can deliver in order
                     continue
 
-                if expected_seq <= seq_num < expected_seq + window_size * buffer_size:
-                    # Paquete dentro de la ventana
-                    if seq_num not in buffer:
-                        buffer[seq_num] = data
-                        logger.vprint(
-                            f"Paquete con SEQ={seq_num} almacenado en buffer."
-                        )
+            # Data path (PSH) 
+            if flags & FLAG_PSH:
+                if seq == expected_seq_from_client:
+                    # in-order: deliver and drain any contiguous buffered chunks
+                    received_data.extend(data)
+                    expected_seq_from_client += len(data)
 
-                    # Enviar ACK inmediatamente
-                    self._send_packet(FLAG_ACK)
-
-                    # Entregar datos en orden desde el buffer
-                    while expected_seq in buffer:
-                        chunk = buffer.pop(expected_seq)
+                    # promote buffered contiguous data
+                    while expected_seq_from_client in buffer:
+                        chunk = buffer.pop(expected_seq_from_client)
                         received_data.extend(chunk)
-                        chunk_len = len(chunk)
-                        expected_seq += chunk_len
-                        self.ack_num = expected_seq
+                        expected_seq_from_client += len(chunk)
 
-                    # Si hemos recibido suficiente datos, devolvemos lo recibido hasta ahora
-                    if len(received_data) >= buffer_size:
-                        return bytes(received_data)
-
-                else:
-                    # Paquete fuera de la ventana, reenviar último ACK
-                    logger.vprint(
-                        f"Paquete con SEQ={seq_num} fuera de la ventana. Reenviando último ACK."
-                    )
+                    self.ack_num = expected_seq_from_client
                     self._send_packet(FLAG_ACK)
 
-            elif header[2] & FLAG_FIN:
-                logger.vprint("Recibido FIN. La conexión se está cerrando.")
-                self.ack_num = header[0] + 1
+                    if len(received_data) >= buffer_size:
+                        return header, bytes(received_data)
+                    continue
+
+                # Out-of-order but inside window → buffer, ACK cumulative
+                if expected_seq_from_client <= seq < expected_seq_from_client + window_bytes:
+                    if seq not in buffer:
+                        buffer[seq] = data
+                        logger.vprint(f"[SR] Buffered out-of-order SEQ={seq} LEN={len(data)}")
+                    # Even if we got further data, cumulative ACK remains the left edge
+                    self.ack_num = expected_seq_from_client
+                    self._send_packet(FLAG_ACK)
+                    continue
+
+                # Too old or outside window → just re-ACK current expected
+                logger.vprint(f"[SR] SEQ={seq} out of window (expected={expected_seq_from_client}). Re-ACKing.")
+                self.ack_num = expected_seq_from_client
+                self._send_packet(FLAG_ACK)
+                continue
+
+            # Connection teardown
+            if flags & FLAG_FIN:
+                logger.vprint("Recibido FIN (SR). Cerrando.")
+                self.ack_num = seq + 1
                 self._send_packet(FLAG_ACK | FLAG_FIN)
                 self.is_connected = False
-                return bytes(received_data)
+                return None, bytes(received_data)
 
-            else:
-                logger.vprint(f"Paquete inesperado con SEQ={seq_num}. Ignorando.")
-
+            # Anything else
+            logger.vprint(f"[SR] Paquete inesperado flags={bin(flags)} SEQ={seq}. Ignorando (ACK last).")
+            self.ack_num = expected_seq_from_client
+            self._send_packet(FLAG_ACK)
     def __del__(self):
         self.close()
