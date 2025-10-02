@@ -37,5 +37,4 @@ if __name__ == "__main__":
         logger.info("Starting listening thread")
         server.start()
     except KeyboardInterrupt:
-        logger.info("\nClosing server")
-
+        logger.info("\nClosing server...")
