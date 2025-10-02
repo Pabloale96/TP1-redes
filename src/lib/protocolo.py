@@ -367,7 +367,6 @@ class Protocol:
         finally:
             self.is_connected = False
             self.socket.close()
-            logger.vprint("Socket has been closed.")
 
     def _pack_header(self, seq, ack, flags):
         return struct.pack(HEADER_FORMAT, seq, ack, flags, 0)

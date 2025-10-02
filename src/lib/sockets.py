@@ -17,21 +17,21 @@ class Socket:
 
     def bind(self):
         self.socket.bind(self.addr)
-        logger.vprint(f"Servidor UDP escuchando en {self.addr}")
+        logger.vprint(f"UDP server listening on {self.addr}")
 
     def sendto(self, message, addr=None):
         if addr is None:
             addr = self.addr
         # logger.vprint("send message:", message, " to address: ", addr)
         if not self.socket:
-            raise ConnectionError("Socket no está inicializado o está cerrado.")
+            raise ConnectionError("Socket is not initialized or is closed.")
         if isinstance(message, str):
             message = message.encode()
         self.socket.sendto(message, addr)
 
     def recvfrom(self, buffer_size):
         if not self.socket:
-            raise ConnectionError("Socket no está inicializado o está cerrado.")
+            raise ConnectionError("Socket is not initialized or is closed.")
         data, address = self.socket.recvfrom(buffer_size)
         return data, address
 
@@ -45,4 +45,3 @@ class Socket:
 
     def __del__(self):
         self.close()
-
