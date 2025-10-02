@@ -1,9 +1,11 @@
 import ipaddress
-from .file_manager import FileManager
 import os
-from .protocolo import Protocol, HEADER_SIZE
-from .logger import logger
 
+from .file_manager import FileManager
+from .logger import logger
+from .protocolo import HEADER_SIZE, Protocol
+
+CHUNK_SIZE = 1024 * 4
 
 class Client:
 
@@ -37,10 +39,11 @@ class Client:
         logger.set_verbose(self.verbose)
         logger.set_quiet(self.quiet)
 
-        self.conn = Protocol(addr, port, client=True)
+        self.conn = Protocol(addr, port, client=True, recovery_mode=self.protocolo)
 
     def close(self):
-        self.conn.close()
+        if self.conn.is_connected:
+            self.conn.close()
 
     def upload(self):
         self._print_info(string_verbose="Validating filepath...")
@@ -51,7 +54,7 @@ class Client:
         # 1. Crear una instancia de FileManager en modo lectura
         #    (esto lanzará excepción si el archivo no existe o no se puede leer)
         self._print_info(string_verbose="Creating file_manager...")
-        file_manager = FileManager(self.filepath + '/' + self.filename, "r")
+        file_manager = FileManager(self.filepath, "r", chunk_size=CHUNK_SIZE)
         self._print_info(string_verbose="File_manager has been created")
 
         # 2. Conectar al servidor
@@ -62,7 +65,7 @@ class Client:
             return
         
         # 3. Enviar el primer chunk y luego sucesivos
-        self._print_info(string_verbose="Connectd with server")
+        self._print_info(string_verbose="Connected with server")
         self._print_info(string_verbose="Reading first chunk...")
         chunk = file_manager.read_chunk()
 
@@ -82,19 +85,19 @@ class Client:
         self._print_info(
             string_normal=f"{read_bytes_count}[B] have been uploaded to {self.filename} in the server"
         )
-
+        
     def download(self):
         
         # 1. Validar que la ruta de destino exista (no el archivo, que se creará)
         self._print_info(string_verbose="Creating file_manager...")
-        file_manager = FileManager(os.path.join(self.filepath, self.filename), "w")
+        file_manager = FileManager(self.filepath, "w")
         self._print_info(string_verbose="File_manager has been created")
 
         self._print_info(string_verbose="Connecting with server...")
         logger.vprint(self.addr, self.port, self.filename)
 
         # 2. Conectar al servidor con fileop=1 para descarga
-        if not self.conn.connect((self.addr, self.port), self.filename, fileop=1, protocol=self.protocolo):
+        if not self.conn.connect((self.addr, self.port), self.filename, fileop=1):
             self._print_info(string_normal="Could not connect to the server.", string_verbose="Connection failed.")
             return
 
@@ -104,7 +107,7 @@ class Client:
         # No podemos saber el tamaño del archivo de antemano en el download,
         # así que no mostraremos porcentaje, solo bytes recibidos.
         chunk_size = file_manager.getChunkSize()
-        size = chunk_size + HEADER_SIZE
+        size = chunk_size
         while True:
             chunk = self.conn.recv(size, type=self.protocolo)
             if not chunk:
