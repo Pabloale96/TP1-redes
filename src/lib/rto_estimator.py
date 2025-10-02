@@ -25,8 +25,7 @@ class RTOEstimator:
             self.srtt = (1 - self.alpha) * self.srtt + self.alpha * rtt_sample
 
         self.rto = self.srtt + max(self.g, self.k * self.rttvar)
-        # Proteger: mínimo 200ms, máximo 60s
-        self.rto = min(max(self.rto, 0.2), 60.0)
+        self.rto = min(max(self.rto, 0.01), 5.0)
 
     def get_timeout(self) -> float:
         """Devolver RTO actual (en segundos)."""
@@ -34,4 +33,4 @@ class RTOEstimator:
 
     def backoff(self):
         """Exponential backoff cuando un timeout expira."""
-        self.rto = min(self.rto * 2, 60.0)
+        self.rto = min(self.rto * 1.2, 5.0)

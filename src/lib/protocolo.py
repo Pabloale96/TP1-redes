@@ -18,7 +18,7 @@ FLAG_OP = 0b00100000
 
 WINDOW_SIZE = 100
 BUFFER_SIZE = 1024  # Tamaño del buffer para recv/send para selective repeat
-PAYLOAD_SIZE = 1200
+PAYLOAD_SIZE = 1024
 MAX_DGRAM = 2048
 
 # Formato del encabezado:
@@ -67,7 +67,6 @@ class Protocol:
             raise ConnectionError("Socket no conectado.")
         header, data = self._receive_reliable_packet(payload_size=payload_size, expected_flags=FLAG_PSH, type = type) 
         if data:
-            #print(f"recv_data: {bytes(data)}")
             return bytes(data)
         else:
             return b""
@@ -252,10 +251,7 @@ class Protocol:
                     # Ready to receive OP/FNAME using the per-client socket
                     # Receive OP
                     hdr, data = client_protocol._receive_reliable_packet(expected_flags=FLAG_OP, payload_size=PAYLOAD_SIZE)
-                    print(f"header_fuera: {hdr}")
                     if not hdr or not (hdr[2] & FLAG_OP) or not data:
-                        print("Not header FLAHOP data")
-                        print(f"header_error:{hdr[2]}")
                         client_protocol.close(); return None
                     if len(data) >= 2:
                         client_protocol.operation = data[0]
@@ -265,24 +261,18 @@ class Protocol:
                         client_protocol.recovery_mode = self.STOP_AND_WAIT
 
                     # Receive FNAME
-                    print(f"client_op: {client_protocol.operation}")
-                    print(f"client_rm: {client_protocol.recovery_mode}")
                     hdr, data = client_protocol._receive_reliable_packet(expected_flags=FLAG_FNAME, payload_size=PAYLOAD_SIZE)
                     if not hdr or not (hdr[2] & FLAG_FNAME) or not data:
-                        print("Not header FLAG_FNAME or DATA")
                         client_protocol.close(); return None
 
                     fname = data.decode('utf-8', errors='replace').strip()
                     if not fname:
                         logger.vprint("[SERVER] Nombre de archivo vacío.")
-                        print("Not filename")
                         client_protocol.close()
                         return None
                     client_protocol.filename = fname
 
                     logger.vprint(f"[SERVER] Conexión aceptada de {client_protocol.peer_address}, archivo: {client_protocol.filename}")
-
-                    print("Rtornando protocolo")
 
                     return client_protocol
 
@@ -353,7 +343,8 @@ class Protocol:
         if type == self.STOP_AND_WAIT:
             sent, offset = self._send_stop_and_wait(flags, data)
             while not sent:
-                sent, offset = self._send_stop_and_wait(flags, data[offset::])
+                data = data[offset::]
+                sent, offset = self._send_stop_and_wait(flags, data)
             return True
         elif type == self.SELECTIVE_REPEAT:
             return self._send_selective_repeat(data)
@@ -365,7 +356,7 @@ class Protocol:
         n = len(data)
         sent_flag_ACK = False
 
-        while offset < n or (flags & FLAG_ACK and sent_flag_ACK):
+        while offset < n or ((flags & FLAG_ACK) != 0 and not sent_flag_ACK):
             payload = data[offset:offset + PAYLOAD_SIZE]
 
             attempts = 3                     # ← reset here, per packet
@@ -383,9 +374,6 @@ class Protocol:
                 # pack21_off = 1200, ACK lost,  server_ack = 2400, seq = 1200
                 # pack3_off = 2400, e_ack = 2400, seq = 2400
                 expected_ack = self.seq_num + len(payload)
-                print("\n\n\n")
-                print(f"peer address: {self.peer_address}")
-                print("\n\n\n")
                 if header and (header[2] & FLAG_ACK) and header[1] >= expected_ack:
                     #200
                     # ACK correcto → actualizar RTO con la muestra de RTT
@@ -399,9 +387,6 @@ class Protocol:
                     if header[1] == expected_ack:
                         offset += len(payload)
                     else:
-                        print("\n\n\n\n")
-                        print("El ack enviado por el server es mayor al esperado")
-                        print("\n\n\n\n")
                         offset += header[1] - expected_ack
 
                     logger.vprint(f"\n[Sender] RTT sample={rtt_sample:.4f}s, nuevo RTO={self.rto_estimator.get_timeout():.4f}s\n")
@@ -471,7 +456,6 @@ class Protocol:
                 self.ack_num = header[0] + 1
                 self._send_packet(FLAG_ACK | FLAG_FIN, b"")
                 self.is_connected = False
-                print("Retornando con FLAG_FIN")
                 return None, bytes(received_data)
 
             else:
@@ -486,35 +470,6 @@ class Protocol:
             return self._recv_selective_repeat(buffer_size)
         else:
             raise ValueError(f"Tipo de recepción desconocido: {type}")
-        #while True:
-        #    header, data, _ = self._receive_packet(timeout=None)
-        #    if not header:
-        #        continue
-
-        #    if expected_flags and not (header[2] & expected_flags):
-        #        logger.vprint(
-        #            f"Paquete inesperado. Se esperaban flags {bin(expected_flags)}, se recibió {bin(header[2])}"
-        #        )
-        #        continue
-
-        #    # Si el número de secuencia es el esperado y off-by-one en la numeración
-        #    # los paquetes SYN t SYN-ACK de la coneccion no modifican el ack_num
-        #    if header[0] == self.ack_num or header[0] == (self.ack_num - 1):
-
-        #        logger.vprint(
-        #            "Paquete confiable recibido en orden (o tolerado off-by-one)."
-        #        )
-        #        self.ack_num = header[0] + len(data)
-        #        self.seq_num = header[1]
-
-        #        self._send_packet(FLAG_ACK)
-        #        return header, data
-
-        #    else:
-        #        logger.vprint(
-        #            f"Paquete fuera de orden recibido. Se esperaba SEQ={self.ack_num}, se recibió {header[0]}."
-        #        )
-        #        self._send_packet(FLAG_ACK)
 
     def _send_selective_repeat(self, data):
         if not self.is_connected:

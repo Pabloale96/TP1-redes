@@ -84,6 +84,7 @@ class Client:
         self._print_info(
             string_normal=f"{read_bytes_count}[B] have been uploaded to {self.filename} in the server"
         )
+        self.conn.close()
 
     def download(self):
         
