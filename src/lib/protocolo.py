@@ -137,8 +137,9 @@ class Protocol:
         self._send_packet(FLAG_ACK)
         logger.vprint("[CLIENT] ACK final enviado. Linger para duplicados de SYN-ACK...")
 
-        linger_end = time.monotonic() + 1.0  # short linger window
+        linger_end = time.monotonic() + 2.0  # short linger window
         while time.monotonic() < linger_end:
+            logger.vprint("[CLIENT] ")
             remaining = linger_end - time.monotonic()
             header, _, addr = self._receive_packet(max(0.0, remaining))
             if not header:

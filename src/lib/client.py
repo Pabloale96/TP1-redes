@@ -90,7 +90,7 @@ class Client:
         
         # 1. Validar que la ruta de destino exista (no el archivo, que se creará)
         self._print_info(string_verbose="Creating file_manager...")
-        file_manager = FileManager(os.path.join(self.filepath, self.filename), "w")
+        file_manager = FileManager(self.filepath, "w")
         self._print_info(string_verbose="File_manager has been created")
 
         self._print_info(string_verbose="Connecting with server...")
@@ -124,6 +124,7 @@ class Client:
         self._print_info(
             string_normal=f"Total {received_bytes_count}[B] have been downloaded to {os.path.join(self.filepath, self.filename)}"
         )
+        self.conn.close()
 
 
     def _print_info(self, string_normal=None, string_verbose=None):
